@@ -1,0 +1,86 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Sonar",
+  "version": "0.1.0",
+  "identifier": "ai.subunit.sonar",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Sonar",
+        "width": 980,
+        "height": 680,
+        "minWidth": 840,
+        "minHeight": 560,
+        "center": true
+      },
+      {
+        "label": "overlay",
+        "title": "u1 arbeitet",
+        "url": "index.html",
+        "fullscreen": true,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "focus": false,
+        "focusable": false,
+        "visible": false,
+        "shadow": false
+      },
+      {
+        "label": "overlayControl",
+        "title": "Sonar Overlay",
+        "url": "index.html",
+        "width": 170,
+        "height": 46,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "visible": false,
+        "shadow": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb"],
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": ["binaries/subunit-bridge"],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "longDescription": "Sonar — der Agent auf der Maschine. Bündelt die Subunit Bridge als Sidecar; Forge (Remote-Support) und Trace (Task-Mining) leben als eigene Spaces in einer App.",
+    "shortDescription": "Sonar (Forge + Trace)"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMzNUY2OTJBQ0E2Njc2RjIKUldUeWRtYktLbWxmTTR3QXRMdXEzT1FFUFhtRWEvUWNIZlV1bVNucGxsU0JqcWZnTlVBZzMxTjgK",
+      "endpoints": [
+        "https://github.com/subunit-ai/sonar-tauri/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

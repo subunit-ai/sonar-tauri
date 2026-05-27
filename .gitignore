@@ -1,0 +1,34 @@
+# Rust / Tauri
+target/
+src-tauri/target/
+src-tauri/gen/
+
+# Gebündelter Bridge-Sidecar (95–111 MB) — per scripts/fetch-sidecars.sh aus dem
+# bridge-tauri-Release geholt + SHA-256-verifiziert, NICHT committet
+src-tauri/binaries/
+
+# Node / Frontend
+node_modules
+dist
+dist-ssr
+.vite
+*.local
+
+# Secrets — NIEMALS committen
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.token
+credentials/
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.log
+*.bak-*
+
+# Bewusst COMMITTEN (reproduzierbare Builds): Cargo.lock, bun.lock
