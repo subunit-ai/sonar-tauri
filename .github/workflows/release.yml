@@ -48,8 +48,10 @@ jobs:
           - { os: windows-latest, args: "--bundles nsis" }
           - { os: windows-11-arm, args: "--target aarch64-pc-windows-msvc --bundles nsis" }
           - { os: ubuntu-latest,  args: "--bundles deb" }
-          - { os: macos-13,       args: "--target x86_64-apple-darwin --bundles dmg" }
+          # Beide macOS-Builds auf macos-14 (Apple Silicon, plentiful Runner); der x64-Build
+          # cross-compiliert nativ (Apple-Toolchain). Vermeidet die knappen/auslaufenden macos-13-Runner.
           - { os: macos-14,       args: "--target aarch64-apple-darwin --bundles dmg" }
+          - { os: macos-14,       args: "--target x86_64-apple-darwin --bundles dmg" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -63,6 +65,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
           toolchain: stable
+      - name: macOS Rust-Targets (x64-Cross auf Apple Silicon)
+        if: startsWith(matrix.os, 'macos')
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
       - name: Linux Tauri-Systemdeps
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -89,5 +94,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Sonar ${{ github.ref_name }}"
-          releaseDraft: true
+          # Veröffentlicht (kein Draft) → Releases sind als Versionen sichtbar UND der Auto-Updater
+          # findet `/releases/latest` (Drafts werden vom Updater nie aufgelöst).
+          releaseDraft: false
           args: ${{ matrix.args }}
