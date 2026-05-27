@@ -196,7 +196,7 @@ export function ConsentPrompt({
     return null;
   }
 
-  const command = request.cmd?.length ? request.cmd.join(" ") : "Unknown";
+  const cmdArgs = request.cmd?.length ? request.cmd : null;
   const countdownLabel =
     remainingMs === null ? "Ablauf unbekannt" : formatRemaining(remainingMs);
 
@@ -224,8 +224,28 @@ export function ConsentPrompt({
           </div>
 
           <div style={styles.detail}>
-            <span style={styles.label}>Kommando</span>
-            <pre style={styles.command}>{command}</pre>
+            <span style={styles.label}>Kommando (argv)</span>
+            {cmdArgs ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {cmdArgs.map((arg, index) => (
+                  <code
+                    key={index}
+                    style={{
+                      background: "rgba(2, 6, 23, 0.06)",
+                      border: "1px solid rgba(2, 6, 23, 0.12)",
+                      borderRadius: 6,
+                      fontSize: 13,
+                      padding: "3px 7px",
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {arg}
+                  </code>
+                ))}
+              </div>
+            ) : (
+              <span style={styles.value}>Unbekannt</span>
+            )}
           </div>
 
           <div style={styles.detail}>

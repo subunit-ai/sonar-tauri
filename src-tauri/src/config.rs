@@ -23,8 +23,10 @@ pub struct Config {
     pub subunit_workspace_id: String,
     #[serde(default)]
     pub account_email: String,
-    /// Signierter Operator-Claim (`op`) aus dem JWT — NUR aus dem Token gelesen,
-    /// nie lokal gesetzt. Treibt die Access-Policy in der Bridge (P2).
+    /// Operator-Claim (`op`) aus dem JWT — NUR UI-Label. Wird clientseitig OHNE
+    /// Signatur-Verify dekodiert → NIEMALS als Sicherheitsgrenze nutzen. Die echte
+    /// Access-Policy (subunit=voll, Kunde=Consent) erzwingt die Bridge serverseitig
+    /// gegen JWKS (P2) — nie dieser Wert. (Codex-Finding #2)
     #[serde(default)]
     pub account_is_operator: bool,
 }
@@ -37,12 +39,22 @@ impl Config {
             .unwrap_or_default()
     }
 
+    /// Atomar schreiben (temp + rename) und auf Unix mit 0600 absichern, damit der
+    /// Refresh-Token nicht von anderen Usern lesbar ist (Codex-Finding #3).
     pub fn save(&self) -> anyhow::Result<()> {
         let path = config_path().ok_or_else(|| anyhow::anyhow!("no config dir available"))?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(path, serde_json::to_vec_pretty(self)?)?;
+        let data = serde_json::to_vec_pretty(self)?;
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, &data)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+        }
+        std::fs::rename(&tmp, &path)?;
         Ok(())
     }
 

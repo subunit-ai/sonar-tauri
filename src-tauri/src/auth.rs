@@ -7,7 +7,7 @@
 //! `state` verifizieren, Tokens (+ signierten `op`-Claim) speichern, Tab schließen.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, ErrorKind, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -262,8 +262,12 @@ fn do_refresh(refresh_token: &str) -> anyhow::Result<(String, String, i32)> {
     ))
 }
 
+// Request-Zeile hart begrenzen (8 KiB) — ein lokaler Client darf nicht unbounded
+// senden (Login-DoS, Codex-Finding #6). Read-Timeout/Deadline gibt es zusätzlich.
+const MAX_REQUEST_LINE: u64 = 8 * 1024;
+
 fn read_request_line(stream: &TcpStream) -> anyhow::Result<String> {
-    let mut reader = BufReader::new(stream.try_clone()?);
+    let mut reader = BufReader::new(stream.try_clone()?).take(MAX_REQUEST_LINE);
     let mut line = String::new();
     reader.read_line(&mut line)?;
     Ok(line)

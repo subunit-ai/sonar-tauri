@@ -137,6 +137,7 @@ function LoginScreen({
         <p style={loginStyles.hint}>
           Login läuft über auth.subunit.ai in deinem Browser.
         </p>
+        <p style={loginStyles.powered}>Powered by Subunit Bridge</p>
       </div>
     </main>
   );
@@ -808,6 +809,14 @@ const loginStyles: Record<string, CSSProperties> = {
   },
   error: { color: "#fca5a5", fontSize: 13, margin: 0 },
   hint: { color: "#64748b", fontSize: 12, margin: "4px 0 0" },
+  powered: {
+    color: "#475569",
+    fontSize: 10,
+    fontWeight: 800,
+    letterSpacing: 1,
+    margin: "12px 0 0",
+    textTransform: "uppercase",
+  },
 };
 
 const overlayStyles: Record<string, CSSProperties> = {

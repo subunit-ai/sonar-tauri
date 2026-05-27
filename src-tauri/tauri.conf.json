@@ -72,7 +72,7 @@
         "installMode": "currentUser"
       }
     },
-    "longDescription": "Sonar — der Agent auf der Maschine. Bündelt die Subunit Bridge als Sidecar; Forge (Remote-Support) und Trace (Task-Mining) leben als eigene Spaces in einer App.",
+    "longDescription": "Sonar — der Agent auf der Maschine. Powered by Subunit Bridge (als Sidecar gebündelt); Forge (Remote-Support) und Trace (Task-Mining) leben als eigene Spaces in einer App.",
     "shortDescription": "Sonar (Forge + Trace)"
   },
   "plugins": {

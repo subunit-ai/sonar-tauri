@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/bridge-tauri
-          ref: v0.2.0
+          ref: 7a559e363754d360123ea801db92b08a7657d7f1 # v0.2.0 (Commit-SHA gepinnt, nicht Tag)
           ssh-key: ${{ secrets.BRIDGE_DEPLOY_KEY }}
           path: bridge-src
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -82,13 +82,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS-Signing/Notarisierung (cert-gated: leer = unsigniert gebaut, Notarisierung aus)
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # macOS Code-Signing/Notarisierung: bewusst NICHT verdrahtet, solange keine Apple-Certs
+          # existieren. Ein gesetztes (leeres) APPLE_CERTIFICATE lässt tauri-action `security import`
+          # versuchen → Build-Abbruch. Bis dahin baut macOS ad-hoc-signiert (läuft). Bei Certs ergänzen:
+          # APPLE_CERTIFICATE(_PASSWORD), APPLE_SIGNING_IDENTITY, APPLE_ID(_PASSWORD), APPLE_TEAM_ID.
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Sonar ${{ github.ref_name }}"

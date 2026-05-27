@@ -30,8 +30,10 @@ declare -A TARGETS=(
 # nur die Targets bauen, die für diesen CI-Runner gebraucht werden (oder alle lokal)
 ONLY="${ONLY:-}"
 
-echo "[fetch-sidecars] bun install im Bridge-Source ($BRIDGE_SRC)"
-( cd "$BRIDGE_SRC" && ( "$BUN" install --frozen-lockfile || "$BUN" install ) )
+echo "[fetch-sidecars] bun install im Bridge-Source ($BRIDGE_SRC) — strict (Lockfile-Disziplin)"
+# Strikt: kein Fallback auf 'bun install' — ein out-of-sync/fehlendes Lockfile MUSS hart
+# fehlschlagen (Supply-Chain, Codex-Finding #5). Bridge-Source hat ein committetes bun.lock.
+( cd "$BRIDGE_SRC" && "$BUN" install --frozen-lockfile )
 
 for triple in "${!TARGETS[@]}"; do
   [ -n "$ONLY" ] && [ "$ONLY" != "$triple" ] && continue
