@@ -8,11 +8,8 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  BridgeStatusCard,
-  type BridgeStatus,
-  type ConsentState,
-} from "./BridgeStatusCard";
+import { BridgeCard, type BridgeStatus } from "./BridgeCard";
+import { ForgeAccessCard, type ConsentState } from "./ForgeAccessCard";
 import { ConsentPrompt, type ConsentRequest } from "./ConsentPrompt";
 import { SonarLogo } from "./SonarLogo";
 
@@ -160,17 +157,25 @@ function Shell({
 }) {
   const [space, setSpace] = useState<SpaceId>("home");
   const [status, setStatus] = useState<BridgeStatus | null>(null);
+  const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
-  // Bridge-Status app-weit pollen (für Home-Karte + Nav-Indikator).
+  // Bridge-Status app-weit pollen — die Bridge ist das FUNDAMENT der ganzen App
+  // (Sidebar-Indikator + Home-Karte), nicht Teil eines einzelnen Spaces.
   useEffect(() => {
     let cancelled = false;
     let timeoutId: number | undefined;
     async function refreshStatus() {
       try {
         const next = await invoke<BridgeStatus>("bridge_status");
-        if (!cancelled) setStatus(next);
+        if (!cancelled) {
+          setStatus(next);
+          setLastChecked(new Date());
+        }
       } catch {
-        if (!cancelled) setStatus({ online: false, version: null, paired: null });
+        if (!cancelled) {
+          setStatus({ online: false, version: null, paired: null });
+          setLastChecked(new Date());
+        }
       } finally {
         if (!cancelled) {
           timeoutId = window.setTimeout(refreshStatus, BRIDGE_POLL_INTERVAL_MS);
@@ -194,12 +199,24 @@ function Shell({
     }
   }
 
+  const bridgeOnline = status?.online ?? false;
+
   return (
     <div style={shellStyles.root}>
       <nav style={shellStyles.sidebar}>
         <div style={shellStyles.brand}>
           <SonarLogo size={30} />
           <span style={shellStyles.brandWord}>SONAR</span>
+        </div>
+
+        <div style={shellStyles.bridgeIndicator} title="Die Bridge ist das Fundament der App">
+          <span
+            style={{
+              ...shellStyles.bridgeDot,
+              background: bridgeOnline ? CYAN : "#f59e0b",
+            }}
+          />
+          {bridgeOnline ? "Bridge verbunden" : "Bridge verbindet…"}
         </div>
 
         <div style={shellStyles.navList}>
@@ -241,8 +258,10 @@ function Shell({
       </nav>
 
       <section style={shellStyles.content}>
-        {space === "home" ? <HomeSpace account={account} status={status} /> : null}
-        {space === "forge" ? <ForgeSpace /> : null}
+        {space === "home" ? (
+          <HomeSpace account={account} status={status} lastChecked={lastChecked} />
+        ) : null}
+        {space === "forge" ? <ForgeSpace bridgeOnline={bridgeOnline} /> : null}
         {space === "trace" ? <TraceSpace /> : null}
       </section>
     </div>
@@ -256,27 +275,25 @@ function SpaceShell({ children }: { children: ReactNode }) {
 function HomeSpace({
   account,
   status,
+  lastChecked,
 }: {
   account: AccountState;
   status: BridgeStatus | null;
+  lastChecked: Date | null;
 }) {
-  const online = status?.online ?? false;
   return (
     <SpaceShell>
-      <h1 style={shellStyles.spaceTitle}>Willkommen{account.email ? `, ${account.email}` : ""}</h1>
+      <h1 style={shellStyles.spaceTitle}>
+        Willkommen{account.email ? `, ${account.email}` : ""}
+      </h1>
       <p style={shellStyles.spaceLead}>
-        Sonar bündelt deine On-Site-Werkzeuge in einer App. Wähle links einen Space.
+        Sonar bündelt deine On-Site-Werkzeuge in einer App. Die Bridge ist das Fundament —
+        Forge und Trace laufen darauf.
       </p>
+
+      <BridgeCard status={status} lastChecked={lastChecked} />
+
       <div style={homeStyles.cards}>
-        <div style={homeStyles.card}>
-          <div style={homeStyles.cardHead}>Bridge</div>
-          <div style={{ ...homeStyles.cardValue, color: online ? CYAN : "#f59e0b" }}>
-            {online ? "online" : "verbindet…"}
-          </div>
-          <div style={homeStyles.cardSub}>
-            {status?.version ? `v${status.version}` : "—"}
-          </div>
-        </div>
         <div style={homeStyles.card}>
           <div style={homeStyles.cardHead}>Forge</div>
           <div style={homeStyles.cardValue}>Remote-Support</div>
@@ -294,15 +311,13 @@ function HomeSpace({
   );
 }
 
-/** Forge-Space: die bestehende Bridge-/Consent-Funktion, 1:1 übernommen. */
-function ForgeSpace() {
-  const [status, setStatus] = useState<BridgeStatus | null>(null);
+/** Forge-Space = die ausführende Instanz AUF der Bridge: Remote-Zugriff, Consent, Stop, Hilfe.
+ *  Zeigt bewusst KEINEN Bridge-Verbindungsstatus (das ist Fundament → Home/Sidebar). */
+function ForgeSpace({ bridgeOnline }: { bridgeOnline: boolean }) {
   const [consentState, setConsentState] = useState<ConsentState | null>(null);
   const [pendingConsentRequests, setPendingConsentRequests] = useState<
     ConsentRequest[]
   >([]);
-  const [lastChecked, setLastChecked] = useState<Date | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [consentError, setConsentError] = useState<string | null>(null);
   const [consentActionError, setConsentActionError] = useState<string | null>(
     null,
@@ -341,36 +356,6 @@ function ForgeSpace() {
     setPendingConsentRequests((current) =>
       current.filter((request) => request.id !== id),
     );
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timeoutId: number | undefined;
-    async function refreshStatus() {
-      try {
-        const nextStatus = await invoke<BridgeStatus>("bridge_status");
-        if (!cancelled) {
-          setStatus(nextStatus);
-          setLastChecked(new Date());
-          setError(null);
-        }
-      } catch (caught) {
-        if (!cancelled) {
-          setStatus({ online: false, version: null, paired: null });
-          setLastChecked(new Date());
-          setError(caught instanceof Error ? caught.message : String(caught));
-        }
-      } finally {
-        if (!cancelled) {
-          timeoutId = window.setTimeout(refreshStatus, BRIDGE_POLL_INTERVAL_MS);
-        }
-      }
-    }
-    refreshStatus();
-    return () => {
-      cancelled = true;
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-    };
   }, []);
 
   useEffect(() => {
@@ -502,16 +487,17 @@ function ForgeSpace() {
   return (
     <SpaceShell>
       <h1 style={shellStyles.spaceTitle}>Forge — Remote-Support</h1>
-      <BridgeStatusCard
-        consentAction={consentAction}
-        consentError={consentError}
+      <p style={shellStyles.spaceLead}>
+        Die ausführende Instanz auf der Bridge. Hier steuerst du Fernzugriff, Freigaben und Stop.
+      </p>
+      <ForgeAccessCard
+        bridgeOnline={bridgeOnline}
         consentState={consentState}
-        status={status}
-        lastChecked={lastChecked}
-        error={error}
+        consentError={consentError}
+        consentAction={consentAction}
         helpActionPending={helpActionPending}
-        helpError={helpError}
         helpMessage={helpMessage}
+        helpError={helpError}
         onResume={resumeConsent}
         onRevoke={revokeConsent}
         onHelpRequest={requestHelp}
@@ -661,13 +647,23 @@ const shellStyles: Record<string, CSSProperties> = {
     boxSizing: "border-box",
     display: "flex",
     flexDirection: "column",
-    gap: 18,
+    gap: 14,
     minWidth: 212,
     padding: "20px 16px",
     width: 212,
   },
-  brand: { alignItems: "center", display: "flex", gap: 10, padding: "4px 6px 8px" },
+  brand: { alignItems: "center", display: "flex", gap: 10, padding: "4px 6px 0" },
   brandWord: { fontSize: 17, fontWeight: 800, letterSpacing: 3 },
+  bridgeIndicator: {
+    alignItems: "center",
+    color: "#94a3b8",
+    display: "flex",
+    fontSize: 11,
+    fontWeight: 600,
+    gap: 7,
+    padding: "0 6px 4px",
+  },
+  bridgeDot: { borderRadius: "50%", height: 8, width: 8 },
   navList: { display: "flex", flexDirection: "column", flex: 1, gap: 6 },
   navItem: {
     background: "transparent",
@@ -738,7 +734,7 @@ const shellStyles: Record<string, CSSProperties> = {
 };
 
 const homeStyles: Record<string, CSSProperties> = {
-  cards: { display: "grid", gap: 14, gridTemplateColumns: "repeat(3, 1fr)" },
+  cards: { display: "grid", gap: 14, gridTemplateColumns: "repeat(2, 1fr)" },
   card: {
     background: "rgba(15, 26, 44, 0.6)",
     border: "1px solid rgba(6, 182, 212, 0.18)",
