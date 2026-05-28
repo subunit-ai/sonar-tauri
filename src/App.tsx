@@ -12,6 +12,7 @@ import { BridgeCard, type BridgeStatus } from "./BridgeCard";
 import { ForgeAccessCard, type ConsentState } from "./ForgeAccessCard";
 import { ConsentPrompt, type ConsentRequest } from "./ConsentPrompt";
 import { SonarLogo } from "./SonarLogo";
+import { TraceSpace } from "./TraceSpace";
 
 const BRIDGE_POLL_INTERVAL_MS = 3000;
 const CONSENT_POLL_INTERVAL_MS = 1000;
@@ -516,22 +517,6 @@ function ForgeSpace({ bridgeOnline }: { bridgeOnline: boolean }) {
   );
 }
 
-function TraceSpace() {
-  return (
-    <SpaceShell>
-      <h1 style={shellStyles.spaceTitle}>Trace — Task-Mining</h1>
-      <div style={traceStyles.placeholder}>
-        <SonarLogo size={48} />
-        <p style={traceStyles.placeholderText}>
-          Trace erfasst Arbeitsabläufe lokal, um Automatisierungs-Chancen zu finden.
-          Capture-Engine + Auswertung kommen in der nächsten Ausbaustufe.
-        </p>
-        <span style={traceStyles.badge}>in Arbeit</span>
-      </div>
-    </SpaceShell>
-  );
-}
-
 function OverlayWindow() {
   const [operator, setOperator] = useState("u1");
 
@@ -752,31 +737,6 @@ const homeStyles: Record<string, CSSProperties> = {
   },
   cardValue: { color: INK, fontSize: 18, fontWeight: 800, marginTop: 8 },
   cardSub: { color: "#94a3b8", fontSize: 12, marginTop: 4 },
-};
-
-const traceStyles: Record<string, CSSProperties> = {
-  placeholder: {
-    alignItems: "center",
-    background: "rgba(15, 26, 44, 0.5)",
-    border: "1px dashed rgba(6, 182, 212, 0.3)",
-    borderRadius: 14,
-    display: "flex",
-    flexDirection: "column",
-    gap: 14,
-    padding: "40px 32px",
-    textAlign: "center",
-  },
-  placeholderText: { color: "#94a3b8", fontSize: 14, lineHeight: "21px", margin: 0, maxWidth: 420 },
-  badge: {
-    background: "rgba(6, 182, 212, 0.16)",
-    border: "1px solid rgba(6, 182, 212, 0.5)",
-    borderRadius: 999,
-    color: "#a5f3fc",
-    fontSize: 11,
-    fontWeight: 800,
-    padding: "4px 12px",
-    textTransform: "uppercase",
-  },
 };
 
 const loginStyles: Record<string, CSSProperties> = {

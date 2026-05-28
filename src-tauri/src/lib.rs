@@ -4,6 +4,7 @@ mod config;
 mod consent;
 mod sidecar;
 mod supply_chain;
+mod trace;
 
 use serde::Serialize;
 use std::{
@@ -62,6 +63,17 @@ pub fn run() {
             app.manage(supervisor.clone());
             app.manage(consent_controller.clone());
             app.manage(config::AppState::load());
+            // Trace-Engine (Task-Mining) — lokale DB im Sonar-Config-Dir, Erfassung default AUS.
+            let trace_db = dirs::config_dir()
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no config dir"))?
+                .join("sonar")
+                .join("trace.db");
+            if let Some(parent) = trace_db.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let trace_engine = trace_engine::TraceEngine::new(trace_db)
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
+            app.manage(trace_engine);
             supervisor.start(app.handle().clone());
             consent_controller.start(app.handle().clone());
             setup_tray(app)?;
@@ -81,7 +93,12 @@ pub fn run() {
             consent::overlay_dismiss,
             auth::account_state,
             auth::account_login,
-            auth::account_logout
+            auth::account_logout,
+            trace::trace_status,
+            trace::trace_start,
+            trace::trace_stop,
+            trace::trace_recent_events,
+            trace::trace_app_usage
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

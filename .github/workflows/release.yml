@@ -24,18 +24,28 @@ jobs:
           ref: 154c6ed7ed26b4c89f27a7cf227f15cbb38c3baf # v0.3.0 (Operator-Bypass + Freshness-Gate)
           ssh-key: ${{ secrets.BRIDGE_DEPLOY_KEY }}
           path: bridge-src
+      - name: Checkout trace-engine source (pinned, read-only deploy key)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: subunit-ai/trace-tauri
+          ref: 1a93a41211fc50ed4759c7f827a57ba7608a0f4e # v0.1.0
+          ssh-key: ${{ secrets.TRACE_DEPLOY_KEY }}
+          path: trace-co
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with: { bun-version: 1.3.11 }
       - name: Build all sidecars + manifest (Bun cross-compile)
         env:
           BRIDGE_SRC: ${{ github.workspace }}/bridge-src
         run: bash scripts/fetch-sidecars.sh
+      - name: Pack trace-engine source (linux-checkout → Artifact, vermeidet Windows-ssh-Checkout)
+        run: tar -czf trace-src.tgz -C trace-co --exclude=.git --exclude=target .
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sidecars
           path: |
             src-tauri/binaries/subunit-bridge-*
             scripts/sidecar-sha256.txt
+            trace-src.tgz
           if-no-files-found: error
           retention-days: 1
 
@@ -60,6 +70,9 @@ jobs:
         with:
           name: sidecars
           path: ${{ github.workspace }}
+      - name: Unpack trace-engine source (für die Cargo-Path-Dependency ../trace-src)
+        shell: bash
+        run: mkdir -p trace-src && tar -xzf trace-src.tgz -C trace-src
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with: { bun-version: 1.3.11 }
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
@@ -68,11 +81,12 @@ jobs:
       - name: macOS Rust-Targets (x64-Cross auf Apple Silicon)
         if: startsWith(matrix.os, 'macos')
         run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
-      - name: Linux Tauri-Systemdeps
+      - name: Linux Tauri-Systemdeps (+ libxcb für active-win-pos-rs)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
       - name: Make linux sidecar executable
         if: matrix.os == 'ubuntu-latest'
         run: chmod +x src-tauri/binaries/subunit-bridge-x86_64-unknown-linux-gnu || true

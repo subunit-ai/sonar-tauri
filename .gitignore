@@ -32,3 +32,7 @@ credentials/
 *.bak-*
 
 # Bewusst COMMITTEN (reproduzierbare Builds): Cargo.lock, bun.lock
+
+# Trace-Engine-Quelle: lokal Symlink → ../trace-tauri, in CI per Deploy-Key ausgecheckt (gepinnt)
+/trace-src/
+trace-src
