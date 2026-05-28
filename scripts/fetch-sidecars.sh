@@ -11,7 +11,7 @@
 # garantiert byte-deterministisch → bei Manifest-Mismatch BRIDGE_REF prüfen + Manifest neu pinnen.
 set -euo pipefail
 
-BRIDGE_REF="${BRIDGE_REF:-v0.2.0}"
+BRIDGE_REF="${BRIDGE_REF:-v0.3.0}"
 BRIDGE_SRC="${BRIDGE_SRC:-$HOME/subunit/unitone/workspace/projects/subunit-bridge}"
 BUN="${BUN:-bun}"
 HERE="$(cd "$(dirname "$0")" && pwd)"

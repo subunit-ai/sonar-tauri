@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/bridge-tauri
-          ref: 7a559e363754d360123ea801db92b08a7657d7f1 # v0.2.0 (Commit-SHA gepinnt, nicht Tag)
+          ref: 154c6ed7ed26b4c89f27a7cf227f15cbb38c3baf # v0.3.0 (Operator-Bypass + Freshness-Gate)
           ssh-key: ${{ secrets.BRIDGE_DEPLOY_KEY }}
           path: bridge-src
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
