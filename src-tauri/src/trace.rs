@@ -16,8 +16,7 @@ pub fn trace_start(engine: State<'_, TraceEngine>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn trace_stop(engine: State<'_, TraceEngine>) -> Result<(), String> {
-    engine.stop();
-    Ok(())
+    engine.stop()
 }
 
 #[tauri::command]
@@ -25,7 +24,8 @@ pub fn trace_recent_events(
     engine: State<'_, TraceEngine>,
     limit: u32,
 ) -> Result<Vec<ActivityEvent>, String> {
-    engine.recent_events(limit)
+    // Limit klemmen — kein unbegrenztes Vec aus dem Renderer. (Codex-P2.5)
+    engine.recent_events(limit.clamp(1, 1000))
 }
 
 #[tauri::command]

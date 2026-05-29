@@ -70,6 +70,12 @@ pub fn run() {
                 .join("trace.db");
             if let Some(parent) = trace_db.parent() {
                 let _ = fs::create_dir_all(parent);
+                // Verzeichnis 0700 — Trace-Daten (Fenstertitel) vor anderen lokalen Accounts schützen. (Codex-P1.3)
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+                }
             }
             let trace_engine = trace_engine::TraceEngine::new(trace_db)
                 .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
