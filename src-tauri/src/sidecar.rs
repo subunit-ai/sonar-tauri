@@ -8,6 +8,15 @@ use tauri_plugin_shell::{
 };
 use tokio::time::{sleep, Duration};
 
+/// Ed25519-SPKI Public Key (PEM, mit literalen `\n`-Escapes — config.ts der Bridge
+/// wandelt sie via `.replace(/\\n/g,"\n")` in echte Zeilenumbrüche zurück).
+/// ÖFFENTLICHER Schlüssel → safe zum Einbetten; das private Gegenstück signiert die
+/// Exec-Approvals serverseitig in subunit-api. Ohne diesen Key lehnt der gebündelte
+/// Bridge-Sidecar JEDEN Remote-Exec mit "invalid approval signature" ab (er liest
+/// EXEC_APPROVAL_PUBLIC_KEY aus process.env, das Sonar ihm beim Spawn mitgeben muss).
+const EXEC_APPROVAL_PUBLIC_KEY_PEM: &str =
+    "-----BEGIN PUBLIC KEY-----\\nMCowBQYDK2VwAyEA4D7u7gAC4BS4ES2vxctAvP97TDsoIvLdTASAD+oiPRM=\\n-----END PUBLIC KEY-----";
+
 #[derive(Clone, Debug, Serialize)]
 pub struct BridgeStatus {
     pub online: bool,
@@ -155,6 +164,9 @@ impl BridgeSupervisor {
                     sidecar_path.display()
                 )
             })?
+            // Sidecar erbt das Parent-Env (env() ist additiv, kein env_clear) und bekommt
+            // zusätzlich den Exec-Approval-Verifikationsschlüssel — sonst "invalid approval signature".
+            .env("EXEC_APPROVAL_PUBLIC_KEY", EXEC_APPROVAL_PUBLIC_KEY_PEM)
             .spawn()
             .map_err(|error| {
                 format!(
