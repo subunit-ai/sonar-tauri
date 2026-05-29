@@ -45,6 +45,33 @@ async fn help_request() -> Result<HelpRequestResult, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Alle States VOR dem Builder konstruieren und am Builder managen. Das Webview kann
+    // Commands (account_state, bridge_status, consent_state, …) invoken, BEVOR ein erst in
+    // setup() gemanagtes State verfügbar ist → "state() called before manage()"-Panic beim
+    // Start (deterministisch auf langsameren Maschinen, z.B. Eriks Tablet). Builder-managed =
+    // vor jedem Command garantiert vorhanden, kein Race.
+    let supervisor = sidecar::BridgeSupervisor::new().expect("bridge supervisor init");
+    let consent_controller = consent::ConsentController::new().expect("consent controller init");
+    // Trace-Engine (Task-Mining) — lokale DB im Sonar-Config-Dir, Erfassung default AUS.
+    let trace_db = dirs::config_dir()
+        .expect("no config dir")
+        .join("sonar")
+        .join("trace.db");
+    if let Some(parent) = trace_db.parent() {
+        let _ = fs::create_dir_all(parent);
+        // Verzeichnis 0700 — Trace-Daten (Fenstertitel) vor anderen lokalen Accounts schützen. (Codex-P1.3)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+        }
+    }
+    let trace_engine = trace_engine::TraceEngine::new(trace_db).expect("trace engine init");
+
+    // Klone für den setup()-Hook — start() braucht sie nach dem Move ins manage().
+    let supervisor_for_setup = supervisor.clone();
+    let consent_for_setup = consent_controller.clone();
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
@@ -55,33 +82,13 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
-            let supervisor = sidecar::BridgeSupervisor::new()
-                .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
-            let consent_controller = consent::ConsentController::new()
-                .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
-            app.manage(supervisor.clone());
-            app.manage(consent_controller.clone());
-            app.manage(config::AppState::load());
-            // Trace-Engine (Task-Mining) — lokale DB im Sonar-Config-Dir, Erfassung default AUS.
-            let trace_db = dirs::config_dir()
-                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "no config dir"))?
-                .join("sonar")
-                .join("trace.db");
-            if let Some(parent) = trace_db.parent() {
-                let _ = fs::create_dir_all(parent);
-                // Verzeichnis 0700 — Trace-Daten (Fenstertitel) vor anderen lokalen Accounts schützen. (Codex-P1.3)
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
-                }
-            }
-            let trace_engine = trace_engine::TraceEngine::new(trace_db)
-                .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
-            app.manage(trace_engine);
-            supervisor.start(app.handle().clone());
-            consent_controller.start(app.handle().clone());
+        .manage(config::AppState::load())
+        .manage(supervisor)
+        .manage(consent_controller)
+        .manage(trace_engine)
+        .setup(move |app| {
+            supervisor_for_setup.start(app.handle().clone());
+            consent_for_setup.start(app.handle().clone());
             setup_tray(app)?;
             if let Err(error) = app.autolaunch().enable() {
                 eprintln!("failed to enable autostart: {error}");
