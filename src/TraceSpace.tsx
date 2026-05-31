@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState, memo, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SonarLogo } from "./SonarLogo";
 
@@ -38,7 +38,7 @@ function fmtClock(unixSecs: number): string {
   });
 }
 
-export function TraceSpace() {
+export const TraceSpace = memo(function TraceSpace() {
   const [status, setStatus] = useState<TraceStatus | null>(null);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [usage, setUsage] = useState<AppUsage[]>([]);
@@ -48,7 +48,8 @@ export function TraceSpace() {
   const refresh = useCallback(async () => {
     try {
       const s = await invoke<TraceStatus>("trace_status");
-      setStatus(s);
+      // Prevent unnecessary React re-renders if Tauri returns identical data.
+      setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(s) ? prev : s));
       setError(null);
       if (s.total_events > 0) {
         // Heute 00:00 als "since" für die App-Nutzung.
@@ -57,11 +58,13 @@ export function TraceSpace() {
           invoke<ActivityEvent[]>("trace_recent_events", { limit: 40 }),
           invoke<AppUsage[]>("trace_app_usage", { since }),
         ]);
-        setEvents(ev);
-        setUsage(us);
+        setEvents((prev) => (JSON.stringify(prev) === JSON.stringify(ev) ? prev : ev));
+        setUsage((prev) => (JSON.stringify(prev) === JSON.stringify(us) ? prev : us));
       } else {
-        setEvents([]);
-        setUsage([]);
+        const emptyEvents: ActivityEvent[] = [];
+        const emptyUsage: AppUsage[] = [];
+        setEvents((prev) => (JSON.stringify(prev) === JSON.stringify(emptyEvents) ? prev : emptyEvents));
+        setUsage((prev) => (JSON.stringify(prev) === JSON.stringify(emptyUsage) ? prev : emptyUsage));
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -176,7 +179,7 @@ export function TraceSpace() {
       ) : null}
     </div>
   );
-}
+});
 
 const styles: Record<string, CSSProperties> = {
   space: { display: "flex", flexDirection: "column", gap: 16, maxWidth: 680 },

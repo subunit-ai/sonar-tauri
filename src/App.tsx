@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useState,
+  memo,
   type CSSProperties,
   type ReactNode,
 } from "react";
@@ -62,10 +63,12 @@ function MainApp() {
   const refreshAccount = useCallback(async () => {
     try {
       const next = await invoke<AccountState>("account_state");
-      setAccount(next);
+      // Prevent unnecessary React re-renders if Tauri returns identical data.
+      setAccount((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
       return next;
     } catch {
-      setAccount({ logged_in: false, email: "", is_operator: false, workspace_id: "" });
+      const fallback: AccountState = { logged_in: false, email: "", is_operator: false, workspace_id: "" };
+      setAccount((prev) => (JSON.stringify(prev) === JSON.stringify(fallback) ? prev : fallback));
       return null;
     } finally {
       setReady(true);
@@ -170,12 +173,14 @@ function Shell({
       try {
         const next = await invoke<BridgeStatus>("bridge_status");
         if (!cancelled) {
-          setStatus(next);
+          // Prevent unnecessary React re-renders if Tauri returns identical data.
+          setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
           setLastChecked(new Date());
         }
       } catch {
         if (!cancelled) {
-          setStatus({ online: false, version: null, paired: null });
+          const fallback: BridgeStatus = { online: false, version: null, paired: null };
+          setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(fallback) ? prev : fallback));
           setLastChecked(new Date());
         }
       } finally {
@@ -274,7 +279,7 @@ function SpaceShell({ children }: { children: ReactNode }) {
   return <div style={shellStyles.space}>{children}</div>;
 }
 
-function HomeSpace({
+const HomeSpace = memo(function HomeSpace({
   account,
   status,
   lastChecked,
@@ -311,11 +316,11 @@ function HomeSpace({
       </div>
     </SpaceShell>
   );
-}
+});
 
 /** Forge-Space = die ausführende Instanz AUF der Bridge: Remote-Zugriff, Consent, Stop, Hilfe.
  *  Zeigt bewusst KEINEN Bridge-Verbindungsstatus (das ist Fundament → Home/Sidebar). */
-function ForgeSpace({ bridgeOnline }: { bridgeOnline: boolean }) {
+const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: boolean }) {
   const [consentState, setConsentState] = useState<ConsentState | null>(null);
   const [pendingConsentRequests, setPendingConsentRequests] = useState<
     ConsentRequest[]
@@ -331,7 +336,8 @@ function ForgeSpace({ bridgeOnline }: { bridgeOnline: boolean }) {
 
   const refreshConsentState = useCallback(async () => {
     const nextState = await invoke<ConsentState>("consent_state");
-    setConsentState(nextState);
+    // Prevent unnecessary React re-renders if Tauri returns identical data.
+    setConsentState((prev) => (JSON.stringify(prev) === JSON.stringify(nextState) ? prev : nextState));
     setConsentError(null);
     if ((nextState.pending_count ?? 0) === 0) {
       setPendingConsentRequests([]);
@@ -367,7 +373,7 @@ function ForgeSpace({ bridgeOnline }: { bridgeOnline: boolean }) {
       try {
         const nextState = await invoke<ConsentState>("consent_state");
         if (!cancelled) {
-          setConsentState(nextState);
+          setConsentState((prev) => (JSON.stringify(prev) === JSON.stringify(nextState) ? prev : nextState));
           setConsentError(null);
           if ((nextState.pending_count ?? 0) === 0) {
             setPendingConsentRequests([]);
@@ -402,7 +408,7 @@ function ForgeSpace({ bridgeOnline }: { bridgeOnline: boolean }) {
     });
 
     listen<ConsentState>("consent://state", (event) => {
-      setConsentState(event.payload);
+      setConsentState((prev) => (JSON.stringify(prev) === JSON.stringify(event.payload) ? prev : event.payload));
       setConsentError(null);
       if ((event.payload.pending_count ?? 0) === 0) {
         setPendingConsentRequests([]);
@@ -515,7 +521,7 @@ function ForgeSpace({ bridgeOnline }: { bridgeOnline: boolean }) {
       />
     </SpaceShell>
   );
-}
+});
 
 function OverlayWindow() {
   const [operator, setOperator] = useState("u1");
