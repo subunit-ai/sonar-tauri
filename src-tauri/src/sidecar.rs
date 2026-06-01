@@ -6,7 +6,7 @@ use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
 };
-use tokio::time::{sleep, Duration};
+use tokio::time::{interval, sleep, Duration};
 
 /// Ed25519-SPKI Public Key (PEM, mit literalen `\n`-Escapes — config.ts der Bridge
 /// wandelt sie via `.replace(/\\n/g,"\n")` in echte Zeilenumbrüche zurück).
@@ -82,8 +82,11 @@ impl BridgeSupervisor {
         tauri::async_runtime::spawn(async move {
             supervisor.ensure_running(&app).await;
 
+            let mut interval = interval(Duration::from_secs(5));
+            interval.tick().await; // Consume immediate tick to mimic original first sleep
+
             loop {
-                sleep(Duration::from_secs(5)).await;
+                interval.tick().await;
 
                 if supervisor.is_stopping() {
                     break;
