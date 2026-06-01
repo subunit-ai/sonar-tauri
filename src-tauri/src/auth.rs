@@ -339,3 +339,51 @@ fn decode_jwt_claims(token: &str) -> Option<serde_json::Value> {
         .ok()?;
     serde_json::from_slice(&bytes).ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+    #[test]
+    fn test_decode_jwt_claims_valid() {
+        // Base64Url encoding of {"email":"test@example.com","op":true}
+        // Base64 encoding without padding
+        // Header: {"alg":"HS256","typ":"JWT"} -> eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+        // Payload: {"email":"test@example.com","op":true} -> eyJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20iLCJvcCI6dHJ1ZX0
+        // Signature: dummy -> ZHVtbXk
+
+        let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20iLCJvcCI6dHJ1ZX0.ZHVtbXk";
+        let claims = decode_jwt_claims(token).expect("Should decode valid JWT claims");
+
+        assert_eq!(claims.get("email").unwrap().as_str().unwrap(), "test@example.com");
+        assert_eq!(claims.get("op").unwrap().as_bool().unwrap(), true);
+    }
+
+    #[test]
+    fn test_decode_jwt_claims_invalid_format() {
+        // No dots
+        assert!(decode_jwt_claims("justastring").is_none());
+
+        // Only one dot
+        assert!(decode_jwt_claims("header.payload").is_none());
+
+        // Too many dots
+        assert!(decode_jwt_claims("header.payload.signature.extra").is_none());
+    }
+
+    #[test]
+    fn test_decode_jwt_claims_invalid_base64() {
+        // Payload has invalid base64 characters (e.g., spaces, invalid symbols)
+        let token = "header.invalid_base64_!@#$.signature";
+        assert!(decode_jwt_claims(token).is_none());
+    }
+
+    #[test]
+    fn test_decode_jwt_claims_invalid_json() {
+        // Payload is valid base64 but invalid JSON
+        // "not a json string" -> base64: bm90IGEganNvbiBzdHJpbmc
+        let token = "header.bm90IGEganNvbiBzdHJpbmc.signature";
+        assert!(decode_jwt_claims(token).is_none());
+    }
+}
