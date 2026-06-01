@@ -329,3 +329,29 @@ where
         eprintln!("failed to show notification: {error}");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rfc3339_from_unix_ms() {
+        // Unix epoch
+        assert_eq!(rfc3339_from_unix_ms(0), "1970-01-01T00:00:00.000Z");
+
+        // 1 second after epoch
+        assert_eq!(rfc3339_from_unix_ms(1000), "1970-01-01T00:00:01.000Z");
+
+        // Leap year (2024-02-29 00:00:00 UTC)
+        assert_eq!(rfc3339_from_unix_ms(1709164800000), "2024-02-29T00:00:00.000Z");
+
+        // Arbitrary recent date (2024-06-01 00:00:00 UTC)
+        assert_eq!(rfc3339_from_unix_ms(1717200000000), "2024-06-01T00:00:00.000Z");
+
+        // With milliseconds
+        assert_eq!(rfc3339_from_unix_ms(1717200000123), "2024-06-01T00:00:00.123Z");
+
+        // Y2K (2000-01-01 00:00:00 UTC)
+        assert_eq!(rfc3339_from_unix_ms(946684800000), "2000-01-01T00:00:00.000Z");
+    }
+}
