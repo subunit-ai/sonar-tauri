@@ -526,3 +526,19 @@ fn default_remote_access() -> String {
 fn error_to_string(error: BridgeClientError) -> String {
     error.to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_consent_controller_new() {
+        let controller = ConsentController::new().expect("failed to create ConsentController");
+
+        // Assert initial states
+        assert!(controller.lock_seen_pending().is_empty());
+        assert!(controller.lock_last_signed_operator_id().is_none());
+        assert!(!*controller.lock_overlay_active());
+        assert!(!*controller.lock_overlay_dismissed());
+    }
+}
