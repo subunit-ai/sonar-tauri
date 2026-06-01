@@ -107,9 +107,16 @@ pub fn login(app: &AppHandle) -> anyhow::Result<String> {
                 // Blockierend + bounded lesen, damit ein stiller lokaler Client den Login nicht aufhängt.
                 stream.set_nonblocking(false).ok();
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
-                let reqline = read_request_line(&stream).unwrap_or_default();
+                let (reqline, host) = read_request_and_host(&stream).unwrap_or_default();
                 let path = reqline.split_whitespace().nth(1).unwrap_or("").to_string();
                 let route = path.splitn(2, '?').next().unwrap_or("");
+
+                let expected_localhost = format!("localhost:{port}");
+                let expected_127 = format!("127.0.0.1:{port}");
+                if host != expected_localhost && host != expected_127 {
+                    let _ = write_html(&mut stream, "Sonar", "Warte auf Login…");
+                    continue;
+                }
 
                 // Nur die exakte Route; bis zum gültigen Callback (oder Deadline) weiter bedienen
                 // (verirrte/gefälschte Requests werden beantwortet + ignoriert, nicht fatal).
@@ -262,15 +269,32 @@ fn do_refresh(refresh_token: &str) -> anyhow::Result<(String, String, i32)> {
     ))
 }
 
-// Request-Zeile hart begrenzen (8 KiB) — ein lokaler Client darf nicht unbounded
+// Request-Header hart begrenzen (8 KiB) — ein lokaler Client darf nicht unbounded
 // senden (Login-DoS, Codex-Finding #6). Read-Timeout/Deadline gibt es zusätzlich.
-const MAX_REQUEST_LINE: u64 = 8 * 1024;
+const MAX_HEADERS_SIZE: u64 = 8 * 1024;
 
-fn read_request_line(stream: &TcpStream) -> anyhow::Result<String> {
-    let mut reader = BufReader::new(stream.try_clone()?).take(MAX_REQUEST_LINE);
+fn read_request_and_host(stream: &TcpStream) -> anyhow::Result<(String, String)> {
+    let mut reader = BufReader::new(stream.try_clone()?).take(MAX_HEADERS_SIZE);
+    let mut reqline = String::new();
+    reader.read_line(&mut reqline)?;
+
+    let mut host = String::new();
     let mut line = String::new();
-    reader.read_line(&mut line)?;
-    Ok(line)
+    loop {
+        line.clear();
+        if reader.read_line(&mut line)? == 0 {
+            break;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+        if trimmed.to_lowercase().starts_with("host:") {
+            host = trimmed[5..].trim().to_string();
+        }
+    }
+
+    Ok((reqline, host))
 }
 
 fn write_html(stream: &mut TcpStream, title: &str, msg: &str) -> std::io::Result<()> {
