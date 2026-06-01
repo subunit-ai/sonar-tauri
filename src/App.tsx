@@ -355,9 +355,18 @@ function ForgeSpace({ bridgeOnline }: { bridgeOnline: boolean }) {
   }, []);
 
   const removePendingConsentRequest = useCallback((id: string) => {
-    setPendingConsentRequests((current) =>
-      current.filter((request) => request.id !== id),
-    );
+    setPendingConsentRequests((current) => {
+      // Optimization: use findIndex + splice instead of filter
+      // This stops iterating after finding the single element to remove (O(N) avg case)
+      // rather than always traversing the entire array (O(N) worst case).
+      const index = current.findIndex((request) => request.id === id);
+      if (index === -1) {
+        return current;
+      }
+      const next = [...current];
+      next.splice(index, 1);
+      return next;
+    });
   }, []);
 
   useEffect(() => {
