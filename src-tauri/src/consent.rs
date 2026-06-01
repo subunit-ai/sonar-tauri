@@ -400,7 +400,7 @@ fn truncate(value: &str, max_chars: usize) -> String {
     let mut chars = value.chars();
     let mut truncated = chars.by_ref().take(max_chars).collect::<String>();
     if chars.next().is_some() {
-        truncated.push_str("...");
+        truncated.push_str("…");
     }
     truncated
 }
@@ -525,4 +525,37 @@ fn default_remote_access() -> String {
 
 fn error_to_string(error: BridgeClientError) -> String {
     error.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_truncate_empty_string() {
+        assert_eq!(truncate("", 10), "");
+    }
+
+    #[test]
+    fn test_truncate_shorter_than_max() {
+        assert_eq!(truncate("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_exactly_max() {
+        assert_eq!(truncate("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_longer_than_max() {
+        assert_eq!(truncate("hello world", 5), "hello…");
+    }
+
+    #[test]
+    fn test_truncate_multibyte_utf8() {
+        // "こんにちは" is 5 characters, but more than 5 bytes.
+        assert_eq!(truncate("こんにちは世界", 5), "こんにちは…");
+        // Emojis are often multi-byte
+        assert_eq!(truncate("🚀🚀🚀🚀🚀🛸", 5), "🚀🚀🚀🚀🚀…");
+    }
 }
