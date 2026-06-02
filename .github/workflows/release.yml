@@ -101,6 +101,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Crash-Reporting: DSN zur Compile-Zeit einbacken (option_env! in lib.rs run()).
+          SONAR_SENTRY_DSN: ${{ secrets.SONAR_SENTRY_DSN }}
           # macOS Code-Signing/Notarisierung: bewusst NICHT verdrahtet, solange keine Apple-Certs
           # existieren. Ein gesetztes (leeres) APPLE_CERTIFICATE lässt tauri-action `security import`
           # versuchen → Build-Abbruch. Bis dahin baut macOS ad-hoc-signiert (läuft). Bei Certs ergänzen:

@@ -45,6 +45,18 @@ async fn help_request() -> Result<HelpRequestResult, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Crash/Error-Reporting. No-op solange SONAR_SENTRY_DSN nicht gesetzt ist (DSN lebt
+    // in CI/Env, NIE im Repo). DSN wird zur Compile-Zeit eingebacken (option_env!), damit
+    // ausgelieferte Binaries ohne Env-Var auf der Nutzer-Maschine melden. Leer = deaktiviert.
+    // DSGVO: keine Trace-/Fensterinhalte in Events — nur Fehlertyp/Stacktrace/Plattform.
+    let _sentry = sentry::init((
+        option_env!("SONAR_SENTRY_DSN").unwrap_or(""),
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            ..Default::default()
+        },
+    ));
+
     // Alle States VOR dem Builder konstruieren und am Builder managen. Das Webview kann
     // Commands (account_state, bridge_status, consent_state, …) invoken, BEVOR ein erst in
     // setup() gemanagtes State verfügbar ist → "state() called before manage()"-Panic beim

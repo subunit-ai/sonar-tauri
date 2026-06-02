@@ -34,6 +34,15 @@ base64 = "=0.22.1"
 rand = "=0.8.5"
 parking_lot = "=0.12.5"
 dirs = "=5.0.1"
+# Crash/Error-Reporting (rustls-Transport, kein OpenSSL). No-op ohne DSN.
+# DSGVO: nur Fehlertyp/Stacktrace/Plattform in Events — NIE Trace-/Fensterinhalte.
+sentry = { version = "=0.34.0", default-features = false, features = [
+  "backtrace",
+  "contexts",
+  "panic",
+  "reqwest",
+  "rustls",
+] }
 # Trace (Task-Mining) — eigenes Repo trace-tauri, in-process konsumiert. Lokal via Symlink
 # trace-src→../trace-tauri, in CI per Deploy-Key zum Tag ausgecheckt (gepinnt = Versionierung).
 trace-engine = { path = "../trace-src" }
