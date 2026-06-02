@@ -78,15 +78,18 @@ fn random_state() -> String {
         .collect()
 }
 
+/// Öffnet die URL im System-Default-Browser über das Opener-Plugin
+/// (`ShellExecuteExW` auf Windows) — die URL geht als EIN String an die Shell.
+///
+/// NICHT `cmd /C start "" <url>`: dort ist `&` ein Befehlstrenner, der
+/// `&port=…` aus der Login-URL abschneidet → der Auth-Server bekommt nur
+/// `?state=…`, sieht `!PORT` und zeigt „Diese Seite wurde nicht von Sonar
+/// Desktop geöffnet". (Identischer Fix wie echo/src-tauri/src/auth.rs, commit
+/// 2aa57a3 „Fix command injection vulnerability in auth browser open".)
 fn open_browser(url: &str) {
-    #[cfg(target_os = "linux")]
-    let _ = std::process::Command::new("xdg-open").arg(url).spawn();
-    #[cfg(target_os = "macos")]
-    let _ = std::process::Command::new("open").arg(url).spawn();
-    #[cfg(target_os = "windows")]
-    let _ = std::process::Command::new("cmd")
-        .args(["/C", "start", "", url])
-        .spawn();
+    if let Err(e) = tauri_plugin_opener::open_url(url.to_string(), None::<&str>) {
+        eprintln!("failed to open browser: {e}");
+    }
 }
 
 /// Blockierend: öffnet den Browser und wartet auf den Loopback-Callback. Liefert
