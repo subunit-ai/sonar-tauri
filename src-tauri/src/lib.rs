@@ -105,6 +105,32 @@ pub fn run() {
             if let Err(error) = app.autolaunch().enable() {
                 eprintln!("failed to enable autostart: {error}");
             }
+
+            // Auto-Update beim Start: check → download+install → relaunch. Silent, weil
+            // Sonar ein Hintergrund-Agent ohne Update-UI ist (anders als Echo, das einen
+            // Update-Prompt hat). No-op wenn schon aktuell. Das Plugin allein checkt NICHT
+            // von selbst — dieser Aufruf ist der eigentliche Auto-Update-Trigger.
+            {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    use tauri_plugin_updater::UpdaterExt;
+                    match handle.updater() {
+                        Ok(updater) => match updater.check().await {
+                            Ok(Some(update)) => {
+                                eprintln!("update available: {} → installiere", update.version);
+                                match update.download_and_install(|_, _| {}, || {}).await {
+                                    Ok(_) => handle.restart(),
+                                    Err(e) => eprintln!("update install failed: {e}"),
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(e) => eprintln!("update check: {e}"),
+                        },
+                        Err(e) => eprintln!("updater unavailable: {e}"),
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
