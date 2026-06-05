@@ -123,14 +123,27 @@ pub fn run() {
                         Ok(updater) => match updater.check().await {
                             Ok(Some(update)) => {
                                 eprintln!("update available: {} → installiere", update.version);
-                                // Den Bridge-Sidecar VOR dem Install beenden: der NSIS-Installer
-                                // überschreibt die mitgelieferte subunit-bridge.exe — läuft sie noch,
-                                // sperrt Windows die Datei und der Installer scheitert mit
-                                // "Error opening file for writing". Kurzes Settle-Delay, damit Windows
-                                // das Datei-Handle wirklich freigibt. (Update-Bug, Finn 2026-06-05)
-                                handle.state::<sidecar::BridgeSupervisor>().stop();
-                                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-                                match update.download_and_install(|_, _| {}, || {}).await {
+                                // Bridge-Sidecar erst im on_download_finish-Callback PAUSIEREN — NACH
+                                // erfolgreichem Download, unmittelbar VOR dem Install. So ist die Bridge
+                                // nicht während des ggf. minutenlangen Downloads tot, und bei einem
+                                // Download-ABBRUCH wird der Callback nie aufgerufen → die Bridge läuft
+                                // einfach weiter. pause_for_update() gibt die .exe für den NSIS-Installer
+                                // frei (sonst "Error opening file for writing"), ohne den Supervisor
+                                // dauerhaft zu stoppen. Settle-Delay: Windows gibt das Datei-Handle frei.
+                                // (Gemini-Review P0 + Update-Bug Finn 2026-06-05)
+                                let handle_for_install = handle.clone();
+                                let installed = update
+                                    .download_and_install(
+                                        |_, _| {},
+                                        move || {
+                                            handle_for_install
+                                                .state::<sidecar::BridgeSupervisor>()
+                                                .pause_for_update();
+                                            std::thread::sleep(std::time::Duration::from_millis(1500));
+                                        },
+                                    )
+                                    .await;
+                                match installed {
                                     Ok(_) => {
                                         // restart() löst einen Exit aus → SONAR_QUITTING setzen, sonst
                                         // verhindert der Tray-Guard (ExitRequested → prevent_exit) den
@@ -138,7 +151,14 @@ pub fn run() {
                                         SONAR_QUITTING.store(true, std::sync::atomic::Ordering::SeqCst);
                                         handle.restart();
                                     }
-                                    Err(e) => eprintln!("update install failed: {e}"),
+                                    Err(e) => {
+                                        eprintln!("update install failed: {e}");
+                                        // Install gescheitert → Bridge wieder hochfahren, sonst bliebe
+                                        // sie bis zum nächsten App-Start tot. (Gemini-Review P0 / Codex d)
+                                        handle
+                                            .state::<sidecar::BridgeSupervisor>()
+                                            .resume_from_update();
+                                    }
                                 }
                             }
                             Ok(None) => {}
@@ -201,6 +221,7 @@ pub fn run() {
             auth::account_state,
             auth::account_login,
             auth::account_logout,
+            auth::bridge_pair,
             trace::trace_status,
             trace::trace_start,
             trace::trace_stop,

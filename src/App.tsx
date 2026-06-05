@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   useState,
   memo,
   type CSSProperties,
@@ -163,6 +164,9 @@ function Shell({
   const [space, setSpace] = useState<SpaceId>("home");
   const [status, setStatus] = useState<BridgeStatus | null>(null);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
+  const [pairing, setPairing] = useState(false);
+  // Auto-Re-Pair nur einmal pro Session versuchen (sonst bei jedem Poll) — Fallback ist der Button.
+  const autoPairAttempted = useRef(false);
 
   // Bridge-Status app-weit pollen — die Bridge ist das FUNDAMENT der ganzen App
   // (Sidebar-Indikator + Home-Karte), nicht Teil eines einzelnen Spaces.
@@ -176,6 +180,12 @@ function Shell({
           // Prevent unnecessary React re-renders if Tauri returns identical data.
           setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
           setLastChecked(new Date());
+          // Auto-Re-Pair: Bridge läuft, ist aber ungepairt (war beim Login offline/Zombie) → einmal
+          // pro Session automatisch koppeln. Schlägt es fehl, bleibt der manuelle „Koppeln"-Button.
+          if (next.online && next.paired === false && !autoPairAttempted.current) {
+            autoPairAttempted.current = true;
+            invoke("bridge_pair").catch((e) => console.error("auto bridge_pair:", e));
+          }
         }
       } catch {
         if (!cancelled) {
@@ -197,17 +207,28 @@ function Shell({
   }, []);
 
   async function logout() {
-    // Fail-closed: nur bei erfolgreichem account_logout (Bridge entkoppelt) die UI als abgemeldet
-    // aktualisieren. Schlägt es fehl, bleibt der Account sichtbar eingeloggt + Hinweis — sonst
-    // glaubt der Nutzer, abgemeldet zu sein, während die Bridge gepairt bleibt. (Codex-ReReview P0)
+    // Lokales Abmelden läuft IMMER durch (finally) — sonst sperrt man sich aus (kein Abmelden →
+    // kein erneutes An-/Koppeln). Die Bridge-Entkopplung passiert best-effort in account_logout.
     try {
       await invoke("account_logout");
-      onAccountChange();
     } catch (caught) {
-      console.error(caught);
-      window.alert(
-        "Abmelden fehlgeschlagen — die lokale Bridge konnte nicht entkoppelt werden. Bitte erneut versuchen.",
-      );
+      console.error("account_logout:", caught);
+    } finally {
+      onAccountChange();
+    }
+  }
+
+  async function pair() {
+    // Manuelles Koppeln: übergibt das gespeicherte Token erneut an die Bridge (für „eingeloggt,
+    // aber ungepairt"). Der Status-Poll aktualisiert danach den Indikator.
+    setPairing(true);
+    try {
+      await invoke("bridge_pair");
+    } catch (caught) {
+      console.error("bridge_pair:", caught);
+      window.alert("Koppeln fehlgeschlagen — bitte sicherstellen, dass du angemeldet bist, und erneut versuchen.");
+    } finally {
+      setPairing(false);
     }
   }
 
@@ -263,6 +284,11 @@ function Shell({
           >
             {account.is_operator ? "subunit · voller Zugriff" : "Kunde"}
           </div>
+          {status?.online && status.paired === false ? (
+            <button onClick={pair} disabled={pairing} style={shellStyles.pairButton} type="button">
+              {pairing ? "Koppelt…" : "Koppeln"}
+            </button>
+          ) : null}
           <button onClick={logout} style={shellStyles.logout} type="button">
             Abmelden
           </button>
@@ -735,6 +761,17 @@ const shellStyles: Record<string, CSSProperties> = {
     fontSize: 12,
     fontWeight: 600,
     padding: "7px 10px",
+  },
+  pairButton: {
+    background: "rgba(6, 182, 212, 0.15)",
+    border: "1px solid rgba(6, 182, 212, 0.5)",
+    borderRadius: 8,
+    color: "#06b6d4",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 700,
+    padding: "7px 10px",
+    marginBottom: 6,
   },
   content: { boxSizing: "border-box", flex: 1, overflowY: "auto", padding: 28 },
   space: { display: "flex", flexDirection: "column", gap: 18, maxWidth: 680 },

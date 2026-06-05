@@ -58,6 +58,54 @@ struct BridgeRuntimeState {
     status: BridgeStatus,
     child: Option<CommandChild>,
     stopping: bool,
+    /// Pausiert NUR für einen Update-Install (kein Respawn), ohne den Supervisor dauerhaft zu
+    /// stoppen — schlägt der Install fehl, bringt resume_from_update() die Bridge zurück.
+    updating: bool,
+}
+
+/// Killt verwaiste Bridge-Sidecar-Prozesse einer früheren Sonar-Instanz (nach Crash/Update-Restart
+/// verliert die neue Instanz den Child-Handle → der alte Prozess bleibt im Task-Manager, belegt
+/// Port :7842 und sperrt beim Install die .exe). Best-effort, plattformabhängig, ohne Konsolenfenster.
+fn kill_orphan_sidecars() {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let image = format!("{}.exe", supply_chain::SIDECAR_NAME);
+        let mut cmd = std::process::Command::new("taskkill");
+        cmd.arg("/F");
+        // Nur Sidecars der EIGENEN Windows-Session killen — sonst beendet auf einem Multi-User-PC
+        // Nutzer B beim Start die laufende Bridge von Nutzer A. (Gemini-Review P2)
+        if let Ok(user) = std::env::var("USERNAME") {
+            if !user.is_empty() {
+                // taskkill matcht den Prozess-Owner als DOMAIN\User (bzw. COMPUTERNAME\User) — ohne
+                // Domäne findet der Filter NICHTS, der Zombie überlebt und sperrt :7842 + die .exe.
+                // USERDOMAIN voranstellen. (Gemini-Review P1)
+                let domain = std::env::var("USERDOMAIN").unwrap_or_default();
+                let user_query = if domain.is_empty() {
+                    user
+                } else {
+                    format!("{domain}\\{user}")
+                };
+                cmd.args(["/FI", &format!("USERNAME eq {user_query}")]);
+            }
+        }
+        let _ = cmd
+            .args(["/IM", &image])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+    }
+    #[cfg(not(windows))]
+    {
+        // -u <user>: nur eigene Prozesse (analog zum Windows-Filter, Multi-User-Sicherheit).
+        let mut cmd = std::process::Command::new("pkill");
+        if let Ok(user) = std::env::var("USER") {
+            if !user.is_empty() {
+                cmd.args(["-u", &user]);
+            }
+        }
+        let _ = cmd.args(["-x", supply_chain::SIDECAR_NAME]).output();
+    }
 }
 
 impl BridgeSupervisor {
@@ -69,6 +117,7 @@ impl BridgeSupervisor {
                     status: BridgeStatus::offline(),
                     child: None,
                     stopping: false,
+                    updating: false,
                 }),
             }),
         })
@@ -80,6 +129,10 @@ impl BridgeSupervisor {
     {
         let supervisor = self.clone();
         tauri::async_runtime::spawn(async move {
+            // Verwaiste Sidecars einer früheren Instanz aufräumen, BEVOR wir health prüfen oder neu
+            // spawnen — sonst antwortet ein Zombie auf :7842 und Sonar nutzt die alte (falsch/
+            // ungepairte) Bridge, statt eine frische zu starten. (Finn-Bug: "pairt nicht" / .exe-Lock)
+            kill_orphan_sidecars();
             supervisor.ensure_running(&app).await;
 
             loop {
@@ -112,6 +165,29 @@ impl BridgeSupervisor {
                 eprintln!("failed to stop bridge sidecar pid {pid}: {error}");
             }
         }
+    }
+
+    /// Pausiert den Sidecar FÜR EIN UPDATE: killt den Prozess (gibt die .exe für den NSIS-Installer
+    /// frei) und unterbindet ein Respawn durch den poll-Loop — stoppt den Supervisor aber NICHT
+    /// dauerhaft. Schlägt der Install fehl, holt resume_from_update() die Bridge zurück. (Gemini-P0)
+    pub fn pause_for_update(&self) {
+        let child = {
+            let mut state = self.lock_state();
+            state.updating = true;
+            state.status = BridgeStatus::offline();
+            state.child.take()
+        };
+        if let Some(child) = child {
+            let pid = child.pid();
+            if let Err(error) = child.kill() {
+                eprintln!("failed to pause bridge sidecar pid {pid} for update: {error}");
+            }
+        }
+    }
+
+    /// Hebt die Update-Pause auf → der poll-Loop spawnt die Bridge wieder (nach fehlgeschlagenem Install).
+    pub fn resume_from_update(&self) {
+        self.lock_state().updating = false;
     }
 
     async fn ensure_running<R>(&self, app: &AppHandle<R>)
@@ -178,7 +254,10 @@ impl BridgeSupervisor {
 
         {
             let mut state = self.lock_state();
-            if state.stopping {
+            // stopping ODER updating: wurde während des (async) Spawns ein Stop bzw. eine Update-Pause
+            // ausgelöst, den frisch gespawnten Sidecar sofort wieder killen — sonst liefe er trotz
+            // Pause weiter und würde beim Update die .exe sperren. (Race-Schutz zur updating-Logik)
+            if state.stopping || state.updating {
                 drop(state);
                 if let Err(error) = child.kill() {
                     return Err(format!("failed to stop bridge sidecar pid {pid}: {error}"));
@@ -236,7 +315,7 @@ impl BridgeSupervisor {
 
     fn should_spawn(&self) -> bool {
         let state = self.lock_state();
-        !state.stopping && state.child.is_none()
+        !state.stopping && !state.updating && state.child.is_none()
     }
 
     fn is_stopping(&self) -> bool {

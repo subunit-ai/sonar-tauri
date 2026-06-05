@@ -171,12 +171,16 @@ impl BridgeClient {
 
 #[allow(dead_code)]
 pub fn local_api_token_path() -> Result<PathBuf, BridgeClientError> {
+    // MUSS exakt den stateDir der Bridge spiegeln (config.ts: `XDG_DATA_HOME ?? homedir()/.local/share`).
+    // `dirs::home_dir()` entspricht Node's `os.homedir()` → Windows: %USERPROFILE%, Unix: $HOME.
+    // Vorher wurde nur env `HOME` gelesen — das ist auf WINDOWS leer → "HOME is unavailable" und
+    // Sonar/Forge finden das von der Bridge geschriebene Token nicht → Pairing/Logout/Forge brechen.
+    // (Codex-Review P1 / Finn-Pairing- + Forge-HOME-Bug 2026-06-05)
     let state_dir = match env::var_os("XDG_DATA_HOME") {
         Some(value) if !value.as_os_str().is_empty() => PathBuf::from(value),
-        _ => {
-            let home = env::var_os("HOME").ok_or(BridgeClientError::HomeDirUnavailable)?;
-            PathBuf::from(home).join(".local/share")
-        }
+        _ => dirs::home_dir()
+            .ok_or(BridgeClientError::HomeDirUnavailable)?
+            .join(".local/share"),
     };
 
     Ok(state_dir.join("subunit-bridge/local-api-token"))
