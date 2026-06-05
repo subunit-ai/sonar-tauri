@@ -123,8 +123,21 @@ pub fn run() {
                         Ok(updater) => match updater.check().await {
                             Ok(Some(update)) => {
                                 eprintln!("update available: {} → installiere", update.version);
+                                // Den Bridge-Sidecar VOR dem Install beenden: der NSIS-Installer
+                                // überschreibt die mitgelieferte subunit-bridge.exe — läuft sie noch,
+                                // sperrt Windows die Datei und der Installer scheitert mit
+                                // "Error opening file for writing". Kurzes Settle-Delay, damit Windows
+                                // das Datei-Handle wirklich freigibt. (Update-Bug, Finn 2026-06-05)
+                                handle.state::<sidecar::BridgeSupervisor>().stop();
+                                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                                 match update.download_and_install(|_, _| {}, || {}).await {
-                                    Ok(_) => handle.restart(),
+                                    Ok(_) => {
+                                        // restart() löst einen Exit aus → SONAR_QUITTING setzen, sonst
+                                        // verhindert der Tray-Guard (ExitRequested → prevent_exit) den
+                                        // Update-Neustart.
+                                        SONAR_QUITTING.store(true, std::sync::atomic::Ordering::SeqCst);
+                                        handle.restart();
+                                    }
                                     Err(e) => eprintln!("update install failed: {e}"),
                                 }
                             }
