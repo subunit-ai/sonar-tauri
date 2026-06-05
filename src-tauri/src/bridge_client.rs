@@ -152,10 +152,10 @@ impl BridgeClient {
         Ok(())
     }
 
-    pub async fn post_help_request(&self) -> Result<(), BridgeClientError> {
+    pub async fn post_help_request(&self, message: &str) -> Result<(), BridgeClientError> {
         self.post_authed_json(
             "/forge/help-request",
-            &serde_json::json!({ "kind": "forge.help_request" }),
+            &serde_json::json!({ "kind": "forge.help_request", "message": message }),
         )
         .await
     }

@@ -44,8 +44,8 @@ struct HelpRequestResult {
 }
 
 #[tauri::command]
-async fn help_request() -> Result<HelpRequestResult, String> {
-    request_help().await
+async fn help_request(message: String) -> Result<HelpRequestResult, String> {
+    request_help(&message).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -280,7 +280,9 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
             MENU_HELP => {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    let result = request_help().await;
+                    // Tray-Schnellhilfe ohne Beschreibung (leerer Text); das Modal im Forge-Space
+                    // ist der Weg mit Problembeschreibung.
+                    let result = request_help("").await;
                     notify_help_result(&app, result);
                 });
             }
@@ -341,28 +343,28 @@ where
     }
 }
 
-async fn request_help() -> Result<HelpRequestResult, String> {
+async fn request_help(message: &str) -> Result<HelpRequestResult, String> {
     if let Ok(client) = bridge_client::BridgeClient::new() {
-        if client.post_help_request().await.is_ok() {
+        if client.post_help_request(message).await.is_ok() {
             return Ok(HelpRequestResult {
                 delivered: true,
                 via: "bridge".to_string(),
-                message: "Anfrage an die Bridge gesendet.".to_string(),
+                message: "Anfrage an den Support gesendet — wir melden uns.".to_string(),
             });
         }
     }
 
-    write_help_marker().map(|path| HelpRequestResult {
+    write_help_marker(message).map(|path| HelpRequestResult {
         delivered: false,
         via: "marker".to_string(),
         message: format!(
-            "Anfrage lokal notiert; die Bridge verarbeitet {}.",
+            "Bridge offline — Anfrage lokal notiert ({}), wird beim nächsten Verbinden gesendet.",
             path.display()
         ),
     })
 }
 
-fn write_help_marker() -> Result<PathBuf, String> {
+fn write_help_marker(message: &str) -> Result<PathBuf, String> {
     let dir = bridge_config_dir()?;
     fs::create_dir_all(&dir)
         .map_err(|error| format!("failed to create {}: {error}", dir.display()))?;
@@ -371,7 +373,8 @@ fn write_help_marker() -> Result<PathBuf, String> {
     let body = serde_json::json!({
         "ts": rfc3339_from_unix_ms(ts_unix_ms),
         "ts_unix_ms": ts_unix_ms,
-        "kind": "forge.help_request"
+        "kind": "forge.help_request",
+        "message": message
     });
     fs::write(&path, body.to_string())
         .map_err(|error| format!("failed to write {}: {error}", path.display()))?;

@@ -12,6 +12,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { BridgeCard, type BridgeStatus } from "./BridgeCard";
 import { ForgeAccessCard, type ConsentState } from "./ForgeAccessCard";
+import { CrystalOverlay } from "./CrystalOverlay";
 import { ConsentPrompt, type ConsentRequest } from "./ConsentPrompt";
 import { SonarLogo } from "./SonarLogo";
 import { TraceSpace } from "./TraceSpace";
@@ -376,6 +377,8 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
   const [helpActionPending, setHelpActionPending] = useState(false);
   const [helpMessage, setHelpMessage] = useState<string | null>(null);
   const [helpError, setHelpError] = useState<string | null>(null);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
+  const [helpDraft, setHelpDraft] = useState("");
 
   const refreshConsentState = useCallback(async () => {
     const nextState = await invoke<ConsentState>("consent_state");
@@ -517,13 +520,20 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
     }
   }
 
-  async function requestHelp() {
-    setHelpActionPending(true);
+  function openHelp() {
     setHelpMessage(null);
     setHelpError(null);
+    setHelpDraft("");
+    setHelpModalOpen(true);
+  }
+
+  async function submitHelp() {
+    setHelpActionPending(true);
+    setHelpError(null);
     try {
-      const result = await invoke<HelpRequestResult>("help_request");
+      const result = await invoke<HelpRequestResult>("help_request", { message: helpDraft.trim() });
       setHelpMessage(result.message);
+      setHelpModalOpen(false);
     } catch (caught) {
       setHelpError(formatError(caught));
     } finally {
@@ -551,8 +561,45 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
         helpError={helpError}
         onResume={resumeConsent}
         onRevoke={revokeConsent}
-        onHelpRequest={requestHelp}
+        onHelpRequest={openHelp}
       />
+      {helpModalOpen ? (
+        <div style={helpModalStyles.backdrop} onClick={() => !helpActionPending && setHelpModalOpen(false)}>
+          <div style={helpModalStyles.card} onClick={(e) => e.stopPropagation()}>
+            <h2 style={helpModalStyles.title}>Hilfe anfordern</h2>
+            <p style={helpModalStyles.lead}>
+              Was ist das Problem? Beschreib es kurz — das Subunit-Team wird sofort benachrichtigt.
+            </p>
+            <textarea
+              style={helpModalStyles.textarea}
+              value={helpDraft}
+              onChange={(e) => setHelpDraft(e.target.value)}
+              placeholder="z. B. „Outlook startet seit heute früh nicht mehr…“"
+              rows={5}
+              autoFocus
+            />
+            {helpError ? <p style={helpModalStyles.error}>{helpError}</p> : null}
+            <div style={helpModalStyles.actions}>
+              <button
+                style={helpModalStyles.cancel}
+                onClick={() => setHelpModalOpen(false)}
+                disabled={helpActionPending}
+                type="button"
+              >
+                Abbrechen
+              </button>
+              <button
+                style={helpModalStyles.submit}
+                onClick={submitHelp}
+                disabled={helpActionPending}
+                type="button"
+              >
+                {helpActionPending ? "Sende…" : "Senden"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <ConsentPrompt
         actionPending={promptActionPending}
         error={consentActionError}
@@ -595,11 +642,8 @@ function OverlayWindow() {
           LIVE
         </div>
 
-        <div className="sonar-ping-scene" aria-hidden="true">
-          <span className="sonar-ping ring1" />
-          <span className="sonar-ping ring2" />
-          <span className="sonar-ping ring3" />
-          <span className="sonar-ping-core" />
+        <div style={overlayStyles.crystalScene} aria-hidden="true">
+          <CrystalOverlay />
         </div>
 
         <h1 style={overlayStyles.title}>{operator} arbeitet an deinem Gerät</h1>
@@ -656,6 +700,63 @@ export default App;
 
 const fontStack =
   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+const helpModalStyles: Record<string, CSSProperties> = {
+  backdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(3, 11, 24, 0.7)",
+    backdropFilter: "blur(4px)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1000,
+  },
+  card: {
+    width: "min(440px, 90vw)",
+    background: "#0f172a",
+    border: "1px solid rgba(6, 182, 212, 0.3)",
+    borderRadius: 14,
+    padding: 22,
+    boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+  },
+  title: { margin: "0 0 6px", fontSize: 18, fontWeight: 700, color: "#e2e8f0" },
+  lead: { margin: "0 0 14px", fontSize: 13, color: "#94a3b8", lineHeight: 1.4 },
+  textarea: {
+    width: "100%",
+    boxSizing: "border-box",
+    background: "#030b18",
+    border: "1px solid rgba(148, 163, 184, 0.3)",
+    borderRadius: 8,
+    color: "#e2e8f0",
+    fontSize: 14,
+    padding: "10px 12px",
+    resize: "vertical",
+    fontFamily: "inherit",
+  },
+  error: { margin: "10px 0 0", fontSize: 13, color: "#f87171" },
+  actions: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 },
+  cancel: {
+    background: "transparent",
+    border: "1px solid rgba(148, 163, 184, 0.3)",
+    borderRadius: 8,
+    color: "#94a3b8",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 600,
+    padding: "8px 16px",
+  },
+  submit: {
+    background: "#06b6d4",
+    border: "none",
+    borderRadius: 8,
+    color: "#03121f",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 700,
+    padding: "8px 18px",
+  },
+};
 
 const shellStyles: Record<string, CSSProperties> = {
   splash: {
@@ -840,6 +941,11 @@ const loginStyles: Record<string, CSSProperties> = {
 };
 
 const overlayStyles: Record<string, CSSProperties> = {
+  crystalScene: {
+    width: 200,
+    height: 200,
+    margin: "0 auto 8px",
+  },
   root: {
     alignItems: "center",
     background: "rgba(4, 9, 20, 0.91)",
