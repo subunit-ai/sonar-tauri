@@ -21,14 +21,14 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/bridge-tauri
-          ref: 154c6ed7ed26b4c89f27a7cf227f15cbb38c3baf # v0.3.0 (Operator-Bypass + Freshness-Gate)
+          ref: 86a6821fe7cc5d0c42665d9f8b2ef01101662e37 # v0.4.0 (/auth/adopt pairing + forge-control + activity + auth-hardening)
           ssh-key: ${{ secrets.BRIDGE_DEPLOY_KEY }}
           path: bridge-src
       - name: Checkout trace-engine source (pinned, read-only deploy key)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/trace-tauri
-          ref: 3d3e0c8fb0028313013087197db4372795275444 # v0.1.1 (Codex-Review-Fixes)
+          ref: ee89db492d28dc07f9486000ba949695be3b2250 # v0.1.2 (UI-path capture + masking + mining-batch)
           ssh-key: ${{ secrets.TRACE_DEPLOY_KEY }}
           path: trace-co
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2

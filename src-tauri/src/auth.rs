@@ -51,16 +51,72 @@ pub async fn account_login(app: AppHandle) -> Result<AccountState, String> {
         .await
         .map_err(|error| format!("login task join error: {error}"))?
         .map_err(|error| error.to_string())?;
+    // Frisches OAuth-Token an die lokale Bridge übergeben → sie pairt + verbindet sich. Ohne
+    // diesen Schritt bleibt die Bridge ungekoppelt (kein Sync/Forge — der eigentliche Pairing-Bug).
+    // Nicht-fatal: scheitert es (Bridge gerade nicht erreichbar), pairt der nächste Login.
+    adopt_into_bridge(&app).await;
     Ok(account_state(app))
 }
 
-/// Meldet den Account ab (löscht Tokens lokal).
+/// Übergibt das in der Config liegende OAuth-Token an die lokale Bridge (`/auth/adopt`),
+/// die es server-validiert + speichert und sich danach mit dem WS verbindet.
+async fn adopt_into_bridge(app: &AppHandle) {
+    let body = {
+        let st = app.state::<AppState>();
+        let c = st.config.lock();
+        if c.subunit_access_token.is_empty() {
+            return;
+        }
+        serde_json::json!({
+            "access_token": c.subunit_access_token,
+            "refresh_token": c.subunit_refresh_token,
+            "expires_in": c.subunit_token_expires_in,
+            "active_workspace_id": c.subunit_workspace_id,
+            "device_label": "sonar",
+        })
+    }; // config-Lock hier freigeben — NICHT über das await halten
+    match crate::bridge_client::BridgeClient::new() {
+        Ok(client) => match client.post_authed_json("/auth/adopt", &body).await {
+            Ok(()) => eprintln!("[auth] Bridge gepairt — OAuth-Token übergeben."),
+            Err(error) => eprintln!("[auth] Bridge-Pairing (/auth/adopt) fehlgeschlagen: {error}"),
+        },
+        Err(error) => eprintln!("[auth] BridgeClient fürs Pairing nicht verfügbar: {error}"),
+    }
+}
+
+/// Meldet den Account ab: entkoppelt ZUERST die lokale Bridge (sonst bliebe sie mit dem adoptierten
+/// Token gepairt, würde weiter refreshen + via WS erreichbar bleiben — bei Operator-Accounts überlebt
+/// sonst Remote-Exec das vermeintliche Abmelden, Codex-Review P0), dann löscht es die Tokens aus der
+/// Sonar-Config.
 #[tauri::command]
-pub fn account_logout(app: AppHandle) -> Result<(), String> {
+pub async fn account_logout(app: AppHandle) -> Result<(), String> {
+    // Fail-CLOSED: Die Bridge MUSS zuerst entkoppelt werden — sie löscht dabei ihre PERSISTIERTEN
+    // Tokens, sonst reconnectet sie nach einem Neustart trotz Sonar-Logout. Schlägt das fehl, brechen
+    // wir ab und lassen die Sonar-Config stehen; sonst zeigt die UI „abgemeldet", während die Bridge
+    // (ggf. mit Operator-Rechten) gepairt bleibt. Lieber sichtbar fehlschlagen → erneut versuchen. (Codex-ReReview P0)
+    logout_from_bridge().await?;
     let state = app.state::<AppState>();
     let mut config = state.config.lock();
     config.clear_account();
     config.save().map_err(|error| error.to_string())
+}
+
+/// Ruft die lokale Bridge `/auth/logout` (entpairt sie, revoked server-seitig + droppt das WS).
+/// Symmetrisch zu `adopt_into_bridge` beim Login. Fehler werden PROPAGIERT (fail-closed, s. o.).
+async fn logout_from_bridge() -> Result<(), String> {
+    let client = crate::bridge_client::BridgeClient::new().map_err(|error| {
+        eprintln!("[auth] BridgeClient fürs Logout nicht verfügbar: {error}");
+        format!("bridge_unavailable: {error}")
+    })?;
+    client
+        .post_authed_json("/auth/logout", &serde_json::json!({}))
+        .await
+        .map_err(|error| {
+            eprintln!("[auth] Bridge-Logout (/auth/logout) fehlgeschlagen: {error}");
+            format!("bridge_logout_failed: {error}")
+        })?;
+    eprintln!("[auth] Bridge entkoppelt (logout).");
+    Ok(())
 }
 
 fn now_secs() -> f64 {

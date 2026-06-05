@@ -97,8 +97,9 @@ export const TraceSpace = memo(function TraceSpace() {
     <div style={styles.space}>
       <h1 style={styles.title}>Trace — Task-Mining</h1>
       <p style={styles.lead}>
-        Erfasst lokal, welche Apps im Vordergrund sind, um Arbeitsabläufe sichtbar zu
-        machen. Alles bleibt auf diesem Gerät — nichts wird hochgeladen.
+        Erfasst, welche Apps und Fenster im Vordergrund sind, um automatisierbare
+        Abläufe sichtbar zu machen. Inhalte (Tastatureingaben, Zwischenablage) werden
+        lokal maskiert — übertragen werden nur die maskierten Aktivitäts-Signale.
       </p>
 
       <section style={styles.controlCard}>

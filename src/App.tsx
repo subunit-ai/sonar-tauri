@@ -197,12 +197,17 @@ function Shell({
   }, []);
 
   async function logout() {
+    // Fail-closed: nur bei erfolgreichem account_logout (Bridge entkoppelt) die UI als abgemeldet
+    // aktualisieren. Schlägt es fehl, bleibt der Account sichtbar eingeloggt + Hinweis — sonst
+    // glaubt der Nutzer, abgemeldet zu sein, während die Bridge gepairt bleibt. (Codex-ReReview P0)
     try {
       await invoke("account_logout");
+      onAccountChange();
     } catch (caught) {
       console.error(caught);
-    } finally {
-      onAccountChange();
+      window.alert(
+        "Abmelden fehlgeschlagen — die lokale Bridge konnte nicht entkoppelt werden. Bitte erneut versuchen.",
+      );
     }
   }
 
@@ -248,7 +253,7 @@ function Shell({
 
         <div style={shellStyles.account}>
           <div style={shellStyles.accountEmail} title={account.email}>
-            {account.email || "Angemeldet"}
+            {account.email ? displayName(account.email) : "Angemeldet"}
           </div>
           <div
             style={{
@@ -275,6 +280,18 @@ function Shell({
   );
 }
 
+// Anzeigename aus der E-Mail ableiten: "finn.jedlitschka@subunit.ai" → "Finn Jedlitschka".
+// Wir zeigen den Namen, nicht die ganze Adresse (die bleibt höchstens im Tooltip).
+function displayName(email: string): string {
+  const local = (email.split("@")[0] ?? "").trim();
+  if (!local) return "";
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function SpaceShell({ children }: { children: ReactNode }) {
   return <div style={shellStyles.space}>{children}</div>;
 }
@@ -291,7 +308,7 @@ const HomeSpace = memo(function HomeSpace({
   return (
     <SpaceShell>
       <h1 style={shellStyles.spaceTitle}>
-        Willkommen{account.email ? `, ${account.email}` : ""}
+        Willkommen{account.email ? `, ${displayName(account.email)}` : ""}
       </h1>
       <p style={shellStyles.spaceLead}>
         Sonar bündelt deine On-Site-Werkzeuge in einer App. Die Bridge ist das Fundament —

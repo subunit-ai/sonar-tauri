@@ -26,6 +26,11 @@ const MENU_HELP: &str = "sonar-help";
 const MENU_STOP: &str = "sonar-stop";
 const MENU_QUIT: &str = "sonar-quit";
 
+// Tray-Agent-Quit-Flag: NUR das Tray-Menü „Beenden" setzt es. Dadurch lässt das Fenster-„X"
+// (bzw. ein OS-Quit) die App im Tray weiterleben, statt sie zu beenden — Bridge + Trace
+// müssen im Hintergrund laufen, sonst kein Sync/Pairing/Forge.
+static SONAR_QUITTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 #[tauri::command]
 fn bridge_status(supervisor: tauri::State<'_, sidecar::BridgeSupervisor>) -> sidecar::BridgeStatus {
     supervisor.status()
@@ -131,6 +136,44 @@ pub fn run() {
                 });
             }
 
+            // Hintergrund-Sync: maskierte UI-Events periodisch an die Bridge-Outbox übergeben.
+            // Sonar ist ein Tray-Agent → der Upload gehört ins Backend, nicht ins Tab-Polling.
+            // Events werden ERST nach erfolgreichem Enqueue als synchronisiert markiert
+            // (Bridge offline/ungepaart → bleiben offen, der nächste Zyklus holt nach).
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(60));
+                    let batch_opt = {
+                        let engine = handle.state::<trace_engine::TraceEngine>();
+                        engine.pending_batch(100)
+                    };
+                    let batch = match batch_opt {
+                        Ok(Some(batch)) => batch,
+                        Ok(None) => continue, // nichts offen
+                        Err(error) => {
+                            eprintln!("[trace-sync] pending_batch: {error}");
+                            continue;
+                        }
+                    };
+                    let ids: Vec<i64> = batch.events.iter().map(|e| e.source_local_id).collect();
+                    let delivered = tauri::async_runtime::block_on(async {
+                        match bridge_client::BridgeClient::new() {
+                            Ok(client) => client.post_authed_json("/activity", &batch).await.is_ok(),
+                            Err(_) => false,
+                        }
+                    });
+                    if delivered {
+                        let engine = handle.state::<trace_engine::TraceEngine>();
+                        if let Err(error) =
+                            engine.mark_ui_events_synced(&ids, unix_timestamp_ms() as i64)
+                        {
+                            eprintln!("[trace-sync] mark_synced: {error}");
+                        }
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -149,7 +192,8 @@ pub fn run() {
             trace::trace_start,
             trace::trace_stop,
             trace::trace_recent_events,
-            trace::trace_app_usage
+            trace::trace_app_usage,
+            trace::trace_sync_batch
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -165,7 +209,15 @@ pub fn run() {
                 let _ = window.hide();
             }
         }
-        tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
+        // Tray-Agent: Fenster-„X" / OS-Quit beendet Sonar NICHT — es bleibt im Tray, damit
+        // Bridge + Trace im Hintergrund aktiv bleiben. Echtes Beenden nur über das Tray-Menü
+        // „Beenden" (setzt SONAR_QUITTING vor app.exit → ExitRequested wird dann nicht verhindert).
+        tauri::RunEvent::ExitRequested { api, .. } => {
+            if !SONAR_QUITTING.load(std::sync::atomic::Ordering::SeqCst) {
+                api.prevent_exit();
+            }
+        }
+        tauri::RunEvent::Exit => {
             app_handle.state::<sidecar::BridgeSupervisor>().stop();
         }
         _ => {}
@@ -219,7 +271,10 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
                     }
                 });
             }
-            MENU_QUIT => app.exit(0),
+            MENU_QUIT => {
+                SONAR_QUITTING.store(true, std::sync::atomic::Ordering::SeqCst);
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
