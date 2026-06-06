@@ -36,3 +36,6 @@ credentials/
 # Trace-Engine-Quelle: lokal Symlink → ../trace-tauri, in CI per Deploy-Key ausgecheckt (gepinnt)
 /trace-src/
 trace-src
+
+# Vendored forge-control sidecar (Rust) — Build-Output nicht committen
+forge-control/target

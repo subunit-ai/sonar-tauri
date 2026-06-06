@@ -55,13 +55,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: windows-latest, args: "--bundles nsis" }
-          - { os: windows-11-arm, args: "--target aarch64-pc-windows-msvc --bundles nsis" }
-          - { os: ubuntu-latest,  args: "--bundles deb" }
+          # forge_target = Rust-Target-Triple, das Tauri für den forge-control-Sidecar (externalBin)
+          # erwartet — identisch zum Tauri-Build-Target (bzw. Host-Triple bei den Nicht-Cross-Zeilen).
+          - { os: windows-latest, args: "--bundles nsis", forge_target: x86_64-pc-windows-msvc }
+          - { os: windows-11-arm, args: "--target aarch64-pc-windows-msvc --bundles nsis", forge_target: aarch64-pc-windows-msvc }
+          - { os: ubuntu-latest,  args: "--bundles deb", forge_target: x86_64-unknown-linux-gnu }
           # Beide macOS-Builds auf macos-14 (Apple Silicon, plentiful Runner); der x64-Build
           # cross-compiliert nativ (Apple-Toolchain). Vermeidet die knappen/auslaufenden macos-13-Runner.
-          - { os: macos-14,       args: "--target aarch64-apple-darwin --bundles dmg" }
-          - { os: macos-14,       args: "--target x86_64-apple-darwin --bundles dmg" }
+          - { os: macos-14,       args: "--target aarch64-apple-darwin --bundles dmg", forge_target: aarch64-apple-darwin }
+          - { os: macos-14,       args: "--target x86_64-apple-darwin --bundles dmg", forge_target: x86_64-apple-darwin }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -86,13 +88,27 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
-            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxdo-dev
       - name: Make linux sidecar executable
         if: matrix.os == 'ubuntu-latest'
         run: chmod +x src-tauri/binaries/subunit-bridge-x86_64-unknown-linux-gnu || true
       - name: Make macOS sidecar executable
         if: startsWith(matrix.os, 'macos')
         run: chmod +x src-tauri/binaries/subunit-bridge-*apple-darwin || true
+      - name: Build forge-control sidecar (Augen+Hände, nativ pro Target → externalBin)
+        # forge-control (xcap-Capture + enigo-Input) ist plattformspezifisch → NICHT cross von Linux
+        # gebaut wie der Bun-Bridge-Sidecar, sondern nativ auf jedem Matrix-Runner für sein Triple.
+        # Ergebnis muss VOR tauri-action in binaries/ liegen (externalBin wird beim Bundlen aufgelöst).
+        shell: bash
+        run: |
+          rustup target add ${{ matrix.forge_target }}
+          cargo build --release --manifest-path forge-control/Cargo.toml --target ${{ matrix.forge_target }}
+          ext=""; [[ "${{ matrix.forge_target }}" == *windows* ]] && ext=".exe"
+          mkdir -p src-tauri/binaries
+          cp "forge-control/target/${{ matrix.forge_target }}/release/forge-control$ext" \
+             "src-tauri/binaries/forge-control-${{ matrix.forge_target }}$ext"
+          ls -la src-tauri/binaries/
       - name: Frontend deps
         run: bun install --frozen-lockfile
       - name: Build + release (Tauri)
