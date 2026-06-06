@@ -89,7 +89,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
             libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            libxdo-dev libpipewire-0.3-dev clang
+            libxdo-dev libpipewire-0.3-dev clang \
+            libgbm-dev libegl1-mesa-dev libwayland-dev
       - name: Make linux sidecar executable
         if: matrix.os == 'ubuntu-latest'
         run: chmod +x src-tauri/binaries/subunit-bridge-x86_64-unknown-linux-gnu || true
@@ -100,7 +101,12 @@ jobs:
         # forge-control (xcap-Capture + enigo-Input) ist plattformspezifisch → NICHT cross von Linux
         # gebaut wie der Bun-Bridge-Sidecar, sondern nativ auf jedem Matrix-Runner für sein Triple.
         # Ergebnis muss VOR tauri-action in binaries/ liegen (externalBin wird beim Bundlen aufgelöst).
+        # CARGO_HTTP_MULTIPLEXING=false + Retries: crates.io-Downloads auf den Win-ARM-Runnern
+        # werfen sonst sporadisch "HTTP2 framing layer"-Fehler (v0.1.18 Flake).
         shell: bash
+        env:
+          CARGO_NET_RETRY: "5"
+          CARGO_HTTP_MULTIPLEXING: "false"
         run: |
           rustup target add ${{ matrix.forge_target }}
           cargo build --release --manifest-path forge-control/Cargo.toml --target ${{ matrix.forge_target }}
