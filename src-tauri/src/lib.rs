@@ -201,6 +201,8 @@ pub fn run() {
             consent::consent_resume,
             consent::consent_state,
             consent::overlay_dismiss,
+            consent::forge_overlay_enabled,
+            consent::set_forge_overlay_enabled,
             auth::account_state,
             auth::account_login,
             auth::account_logout,

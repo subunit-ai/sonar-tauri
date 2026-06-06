@@ -244,6 +244,19 @@ impl ConsentController {
     where
         R: Runtime,
     {
+        // Forge-Einstellung: Overlay global deaktiviert → nie anzeigen (egal ob Zugriff aktiv).
+        let overlay_enabled = app
+            .try_state::<crate::config::AppState>()
+            .map(|s| s.config.lock().forge_overlay_enabled)
+            .unwrap_or(true);
+        if !overlay_enabled {
+            if *self.lock_overlay_active() {
+                self.hide_overlay_windows(app);
+            }
+            *self.lock_overlay_active() = false;
+            return;
+        }
+
         let active =
             state.remote_access == "active" && is_recent_activity(&state.last_session_active_at);
 
@@ -359,6 +372,32 @@ pub fn overlay_dismiss(
     controller: tauri::State<'_, ConsentController>,
 ) -> Result<(), String> {
     controller.dismiss_overlay(&app);
+    Ok(())
+}
+
+/// Forge-Einstellung lesen: wird das „u1 arbeitet"-Overlay bei Remote-Zugriff angezeigt?
+#[tauri::command]
+pub fn forge_overlay_enabled(state: tauri::State<'_, crate::config::AppState>) -> bool {
+    state.config.lock().forge_overlay_enabled
+}
+
+/// Forge-Einstellung setzen. Persistiert; beim Deaktivieren wird ein laufendes Overlay sofort
+/// ausgeblendet (reflect_overlay respektiert das Flag danach dauerhaft).
+#[tauri::command]
+pub fn set_forge_overlay_enabled(
+    app: AppHandle,
+    state: tauri::State<'_, crate::config::AppState>,
+    controller: tauri::State<'_, ConsentController>,
+    enabled: bool,
+) -> Result<(), String> {
+    {
+        let mut config = state.config.lock();
+        config.forge_overlay_enabled = enabled;
+        config.save().map_err(|error| error.to_string())?;
+    }
+    if !enabled {
+        controller.force_hide_overlay(&app);
+    }
     Ok(())
 }
 

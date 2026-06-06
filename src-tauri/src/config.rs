@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Default, Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Config {
     #[serde(default)]
     pub subunit_access_token: String,
@@ -29,6 +29,32 @@ pub struct Config {
     /// gegen JWKS (P2) — nie dieser Wert. (Codex-Finding #2)
     #[serde(default)]
     pub account_is_operator: bool,
+    /// Forge-Einstellung: ob das „u1 arbeitet"-Overlay während Remote-Zugriff angezeigt wird.
+    /// Default TRUE (Transparenz beim Fernzugriff). Nutzer-Präferenz → bleibt über Logout erhalten
+    /// (NICHT in clear_account zurückgesetzt).
+    #[serde(default = "default_true")]
+    pub forge_overlay_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+// Manuelles Default (statt derive) — der derive würde `forge_overlay_enabled` auf `false` setzen;
+// load() nutzt unwrap_or_default() für Neu-Installs → muss TRUE sein (Overlay default an).
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            subunit_access_token: String::new(),
+            subunit_refresh_token: String::new(),
+            subunit_token_expires_in: 0,
+            subunit_token_issued_at: 0.0,
+            subunit_workspace_id: String::new(),
+            account_email: String::new(),
+            account_is_operator: false,
+            forge_overlay_enabled: true,
+        }
+    }
 }
 
 impl Config {

@@ -469,6 +469,25 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
   const [helpError, setHelpError] = useState<string | null>(null);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [helpDraft, setHelpDraft] = useState("");
+  // Forge-Einstellung: „u1 arbeitet"-Overlay anzeigen (default an, persistiert im Config-Dir).
+  const [overlayEnabled, setOverlayEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    invoke<boolean>("forge_overlay_enabled")
+      .then(setOverlayEnabled)
+      .catch(() => setOverlayEnabled(true));
+  }, []);
+
+  async function toggleOverlay() {
+    const next = !(overlayEnabled ?? true);
+    setOverlayEnabled(next); // optimistisch
+    try {
+      await invoke("set_forge_overlay_enabled", { enabled: next });
+    } catch (caught) {
+      setOverlayEnabled(!next); // bei Fehler zurückdrehen
+      console.error("set_forge_overlay_enabled:", caught);
+    }
+  }
 
   const refreshConsentState = useCallback(async () => {
     const nextState = await invoke<ConsentState>("consent_state");
@@ -653,6 +672,37 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
         onRevoke={revokeConsent}
         onHelpRequest={openHelp}
       />
+      <div style={forgeSettingsStyles.card}>
+        <div style={forgeSettingsStyles.row}>
+          <div style={forgeSettingsStyles.text}>
+            <div style={forgeSettingsStyles.title}>„u1 arbeitet"-Overlay</div>
+            <div style={forgeSettingsStyles.desc}>
+              Vollbild-Hinweis mit rotierendem Kristall während des Fernzugriffs. Du kannst es
+              jederzeit über „Ausblenden" wegklicken — hier schaltest du aus, ob es überhaupt erscheint.
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={overlayEnabled ?? true}
+            onClick={toggleOverlay}
+            disabled={overlayEnabled === null}
+            style={{
+              ...forgeSettingsStyles.toggle,
+              ...((overlayEnabled ?? true) ? forgeSettingsStyles.toggleOn : forgeSettingsStyles.toggleOff),
+              opacity: overlayEnabled === null ? 0.5 : 1,
+            }}
+            title={(overlayEnabled ?? true) ? "Overlay ist an" : "Overlay ist aus"}
+          >
+            <span
+              style={{
+                ...forgeSettingsStyles.knob,
+                ...((overlayEnabled ?? true) ? forgeSettingsStyles.knobOn : forgeSettingsStyles.knobOff),
+              }}
+            />
+          </button>
+        </div>
+      </div>
       {helpModalOpen ? (
         <div style={helpModalStyles.backdrop} onClick={() => !helpActionPending && setHelpModalOpen(false)}>
           <div style={helpModalStyles.card} onClick={(e) => e.stopPropagation()}>
@@ -846,6 +896,45 @@ const helpModalStyles: Record<string, CSSProperties> = {
     fontWeight: 700,
     padding: "8px 18px",
   },
+};
+
+const forgeSettingsStyles: Record<string, CSSProperties> = {
+  card: {
+    background: "rgba(15, 26, 44, 0.6)",
+    border: "1px solid rgba(6, 182, 212, 0.18)",
+    borderRadius: 12,
+    boxSizing: "border-box",
+    padding: "16px 18px",
+  },
+  row: { alignItems: "center", display: "flex", gap: 16, justifyContent: "space-between" },
+  text: { display: "flex", flexDirection: "column", gap: 3 },
+  title: { color: INK, fontSize: 14, fontWeight: 700 },
+  desc: { color: "#94a3b8", fontSize: 12, lineHeight: "17px", maxWidth: 460 },
+  toggle: {
+    border: "none",
+    borderRadius: 999,
+    cursor: "pointer",
+    flexShrink: 0,
+    height: 26,
+    padding: 0,
+    position: "relative",
+    transition: "background 0.18s ease",
+    width: 46,
+  },
+  toggleOn: { background: "#06b6d4" },
+  toggleOff: { background: "rgba(148, 163, 184, 0.4)" },
+  knob: {
+    background: "#ffffff",
+    borderRadius: "50%",
+    height: 20,
+    position: "absolute",
+    top: 3,
+    transition: "transform 0.18s ease",
+    width: 20,
+    boxShadow: "0 1px 3px rgba(0,0,0,0.4)",
+  },
+  knobOn: { transform: "translateX(23px)" },
+  knobOff: { transform: "translateX(3px)" },
 };
 
 const updateStyles: Record<string, CSSProperties> = {
@@ -1153,11 +1242,12 @@ const overlayControlStyles: Record<string, CSSProperties> = {
     width: "100vw",
   },
   button: {
-    background: "rgba(6, 182, 212, 0.18)",
-    border: `1px solid ${CYAN}`,
+    background: CYAN,
+    border: "1px solid rgba(255,255,255,0.25)",
     borderRadius: 999,
-    boxShadow: "0 18px 48px rgba(0, 0, 0, 0.35)",
-    color: "#e2e8f0",
+    boxShadow: "0 10px 30px rgba(0, 0, 0, 0.45), 0 0 0 4px rgba(6,182,212,0.18)",
+    color: "#03121f",
+    cursor: "pointer",
     fontSize: 13,
     fontWeight: 800,
     lineHeight: "18px",
