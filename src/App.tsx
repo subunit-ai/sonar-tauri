@@ -10,6 +10,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import { BridgeCard, type BridgeStatus } from "./BridgeCard";
 import { ForgeAccessCard, type ConsentState } from "./ForgeAccessCard";
 import { CrystalOverlay } from "./CrystalOverlay";
@@ -34,6 +35,11 @@ type HelpRequestResult = {
 
 type OverlayState = {
   operator: string;
+};
+
+type UpdateInfo = {
+  version: string;
+  notes: string;
 };
 
 type AccountState = {
@@ -169,6 +175,60 @@ function Shell({
   // Auto-Re-Pair nur einmal pro Session versuchen (sonst bei jedem Poll) — Fallback ist der Button.
   const autoPairAttempted = useRef(false);
 
+  // Update: Version anzeigen, Auto-Suche (Event vom Backend) + manuelle Suche + Ein-Klick-Install.
+  const [appVersion, setAppVersion] = useState("");
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateInstalling, setUpdateInstalling] = useState(false);
+  const [updateNote, setUpdateNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => undefined);
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    // Backend prüft beim Start + alle 6 h und meldet ein gefundenes Update hierüber.
+    listen<UpdateInfo>("update://available", (event) => {
+      setUpdate(event.payload);
+      setUpdateNote(null);
+    }).then((u) => {
+      if (cancelled) u();
+      else unlisten = u;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
+  async function checkForUpdates() {
+    setUpdateChecking(true);
+    setUpdateNote(null);
+    try {
+      const result = await invoke<UpdateInfo | null>("update_check");
+      if (result) {
+        setUpdate(result);
+      } else {
+        setUpdateNote("Du bist auf dem neuesten Stand.");
+      }
+    } catch (caught) {
+      setUpdateNote(`Update-Suche fehlgeschlagen: ${formatError(caught)}`);
+    } finally {
+      setUpdateChecking(false);
+    }
+  }
+
+  async function installUpdate() {
+    setUpdateInstalling(true);
+    setUpdateNote("Update wird installiert — Sonar startet gleich neu…");
+    try {
+      // Bei Erfolg startet die App neu → der Code danach wird i. d. R. nicht mehr erreicht.
+      await invoke("update_install");
+    } catch (caught) {
+      setUpdateInstalling(false);
+      setUpdateNote(`Installation fehlgeschlagen: ${formatError(caught)}`);
+    }
+  }
+
   // Bridge-Status app-weit pollen — die Bridge ist das FUNDAMENT der ganzen App
   // (Sidebar-Indikator + Home-Karte), nicht Teil eines einzelnen Spaces.
   useEffect(() => {
@@ -293,10 +353,40 @@ function Shell({
           <button onClick={logout} style={shellStyles.logout} type="button">
             Abmelden
           </button>
+          <div style={shellStyles.updateBox}>
+            <span style={shellStyles.versionText}>Version {appVersion || "—"}</span>
+            <button
+              onClick={checkForUpdates}
+              disabled={updateChecking}
+              style={shellStyles.updateCheck}
+              type="button"
+            >
+              {updateChecking ? "Suche…" : "Nach Updates suchen"}
+            </button>
+            {updateNote ? <span style={shellStyles.updateNote}>{updateNote}</span> : null}
+          </div>
         </div>
       </nav>
 
       <section style={shellStyles.content}>
+        {update ? (
+          <div style={updateStyles.banner}>
+            <div style={updateStyles.bannerText}>
+              <span style={updateStyles.bannerTitle}>Update verfügbar — Version {update.version}</span>
+              <span style={updateStyles.bannerSub}>
+                Ein Klick lädt die neue Version und startet Sonar automatisch neu.
+              </span>
+            </div>
+            <button
+              style={{ ...updateStyles.bannerButton, opacity: updateInstalling ? 0.6 : 1 }}
+              onClick={installUpdate}
+              disabled={updateInstalling}
+              type="button"
+            >
+              {updateInstalling ? "Installiere…" : "Jetzt installieren"}
+            </button>
+          </div>
+        ) : null}
         {space === "home" ? (
           <HomeSpace account={account} status={status} lastChecked={lastChecked} />
         ) : null}
@@ -758,6 +848,36 @@ const helpModalStyles: Record<string, CSSProperties> = {
   },
 };
 
+const updateStyles: Record<string, CSSProperties> = {
+  banner: {
+    alignItems: "center",
+    background: "linear-gradient(100deg, rgba(6, 182, 212, 0.16), rgba(6, 182, 212, 0.06))",
+    border: "1px solid rgba(6, 182, 212, 0.45)",
+    borderRadius: 12,
+    boxShadow: "0 8px 30px rgba(6, 182, 212, 0.12)",
+    display: "flex",
+    gap: 16,
+    justifyContent: "space-between",
+    marginBottom: 20,
+    padding: "14px 18px",
+  },
+  bannerText: { display: "flex", flexDirection: "column", gap: 2 },
+  bannerTitle: { color: "#ecfeff", fontSize: 14, fontWeight: 700 },
+  bannerSub: { color: "#94a3b8", fontSize: 12 },
+  bannerButton: {
+    background: "#06b6d4",
+    border: "none",
+    borderRadius: 9,
+    color: "#03121f",
+    cursor: "pointer",
+    flexShrink: 0,
+    fontSize: 13,
+    fontWeight: 800,
+    padding: "9px 18px",
+    whiteSpace: "nowrap",
+  },
+};
+
 const shellStyles: Record<string, CSSProperties> = {
   splash: {
     alignItems: "center",
@@ -874,6 +994,28 @@ const shellStyles: Record<string, CSSProperties> = {
     padding: "7px 10px",
     marginBottom: 6,
   },
+  updateBox: {
+    borderTop: "1px solid rgba(148, 163, 184, 0.12)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+    marginTop: 4,
+    paddingTop: 12,
+  },
+  versionText: { color: "#64748b", fontSize: 11, fontWeight: 600 },
+  updateCheck: {
+    background: "transparent",
+    border: "none",
+    color: "#64748b",
+    cursor: "pointer",
+    fontSize: 11,
+    fontWeight: 600,
+    padding: 0,
+    textAlign: "left",
+    textDecoration: "underline",
+    textUnderlineOffset: 2,
+  },
+  updateNote: { color: "#94a3b8", fontSize: 10, lineHeight: "14px" },
   content: { boxSizing: "border-box", flex: 1, overflowY: "auto", padding: 28 },
   space: { display: "flex", flexDirection: "column", gap: 18, maxWidth: 680 },
   spaceTitle: { fontSize: 22, fontWeight: 800, margin: 0 },

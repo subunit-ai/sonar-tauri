@@ -15,7 +15,7 @@ use std::{
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, Runtime, WindowEvent,
+    AppHandle, Emitter, Manager, Runtime, WindowEvent,
 };
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_notification::NotificationExt;
@@ -46,6 +46,27 @@ struct HelpRequestResult {
 #[tauri::command]
 async fn help_request(message: String) -> Result<HelpRequestResult, String> {
     request_help(&message).await
+}
+
+/// An das Frontend gemeldete Update-Info (per `update://available`-Event und als Rückgabe von
+/// `update_check`). `notes` = Release-Body (kann leer sein).
+#[derive(Clone, Serialize)]
+struct UpdateInfo {
+    version: String,
+    notes: String,
+}
+
+/// Manuell „Nach Updates suchen" (UI-Button). Prüft den Updater-Endpoint, installiert NICHT.
+#[tauri::command]
+async fn update_check(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    check_for_update(&app).await
+}
+
+/// Per Ein-Klick installieren: Update herunterladen, Bridge-Sidecar freigeben, installieren und
+/// neu starten. Kehrt bei Erfolg nicht zurück (App startet neu); bei Fehler kommt die Bridge zurück.
+#[tauri::command]
+async fn update_install(app: AppHandle) -> Result<(), String> {
+    install_update(&app).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -111,60 +132,20 @@ pub fn run() {
                 eprintln!("failed to enable autostart: {error}");
             }
 
-            // Auto-Update beim Start: check → download+install → relaunch. Silent, weil
-            // Sonar ein Hintergrund-Agent ohne Update-UI ist (anders als Echo, das einen
-            // Update-Prompt hat). No-op wenn schon aktuell. Das Plugin allein checkt NICHT
-            // von selbst — dieser Aufruf ist der eigentliche Auto-Update-Trigger.
+            // Auto-Update-SUCHE: beim Start sofort prüfen, danach alle 6 h erneut (Sonar ist ein
+            // langlaufender Tray-Agent → ein reiner Start-Check würde Updates tagelang verpassen).
+            // Gefunden → Event `update://available` ans Frontend; der Nutzer installiert per Klick
+            // (update_install). Bewusst KEIN stilles Selbst-Update mehr — der Nutzer soll sehen, dass
+            // eine neue Version da ist und wann neu gestartet wird. Den Datei-Lock auf der
+            // subunit-bridge.exe löst der NSIS-Preinstall-Hook installer-seitig (für jeden Pfad);
+            // install_update() pausiert den Sidecar zusätzlich. Das Plugin checkt nicht von selbst —
+            // dieser Loop ist der Auto-Update-Trigger. (Finn-Bug „kein Autoupdate, kein Button" 2026-06-06)
             {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    use tauri_plugin_updater::UpdaterExt;
-                    match handle.updater() {
-                        Ok(updater) => match updater.check().await {
-                            Ok(Some(update)) => {
-                                eprintln!("update available: {} → installiere", update.version);
-                                // Bridge-Sidecar erst im on_download_finish-Callback PAUSIEREN — NACH
-                                // erfolgreichem Download, unmittelbar VOR dem Install. So ist die Bridge
-                                // nicht während des ggf. minutenlangen Downloads tot, und bei einem
-                                // Download-ABBRUCH wird der Callback nie aufgerufen → die Bridge läuft
-                                // einfach weiter. pause_for_update() gibt die .exe für den NSIS-Installer
-                                // frei (sonst "Error opening file for writing"), ohne den Supervisor
-                                // dauerhaft zu stoppen. Settle-Delay: Windows gibt das Datei-Handle frei.
-                                // (Gemini-Review P0 + Update-Bug Finn 2026-06-05)
-                                let handle_for_install = handle.clone();
-                                let installed = update
-                                    .download_and_install(
-                                        |_, _| {},
-                                        move || {
-                                            handle_for_install
-                                                .state::<sidecar::BridgeSupervisor>()
-                                                .pause_for_update();
-                                            std::thread::sleep(std::time::Duration::from_millis(1500));
-                                        },
-                                    )
-                                    .await;
-                                match installed {
-                                    Ok(_) => {
-                                        // restart() löst einen Exit aus → SONAR_QUITTING setzen, sonst
-                                        // verhindert der Tray-Guard (ExitRequested → prevent_exit) den
-                                        // Update-Neustart.
-                                        SONAR_QUITTING.store(true, std::sync::atomic::Ordering::SeqCst);
-                                        handle.restart();
-                                    }
-                                    Err(e) => {
-                                        eprintln!("update install failed: {e}");
-                                        // Install gescheitert → Bridge wieder hochfahren, sonst bliebe
-                                        // sie bis zum nächsten App-Start tot. (Gemini-Review P0 / Codex d)
-                                        handle
-                                            .state::<sidecar::BridgeSupervisor>()
-                                            .resume_from_update();
-                                    }
-                                }
-                            }
-                            Ok(None) => {}
-                            Err(e) => eprintln!("update check: {e}"),
-                        },
-                        Err(e) => eprintln!("updater unavailable: {e}"),
+                    loop {
+                        check_and_announce_update(&handle).await;
+                        tokio::time::sleep(std::time::Duration::from_secs(6 * 60 * 60)).await;
                     }
                 });
             }
@@ -212,6 +193,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             bridge_status,
             help_request,
+            update_check,
+            update_install,
             consent::consent_allow,
             consent::consent_deny,
             consent::consent_revoke,
@@ -340,6 +323,78 @@ where
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
+    }
+}
+
+/// Prüft den Updater-Endpoint. `Some` = Update verfügbar (Version + Notes), `None` = aktuell.
+async fn check_for_update<R: Runtime>(app: &AppHandle<R>) -> Result<Option<UpdateInfo>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|error| error.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => Ok(Some(UpdateInfo {
+            version: update.version.clone(),
+            notes: update.body.clone().unwrap_or_default(),
+        })),
+        Ok(None) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Lädt das Update, gibt die Bridge-.exe frei (pause_for_update) und startet neu. Bei Erfolg kehrt
+/// die Funktion nicht zurück (restart() → !); bei Fehler wird die Bridge wieder hochgefahren.
+async fn install_update<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|error| error.to_string())?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Kein Update verfügbar.".to_string())?;
+
+    // Sidecar erst im on_download_finish-Callback pausieren — NACH dem Download, unmittelbar VOR dem
+    // Install. So lebt die Bridge während des Downloads weiter; ein Download-Abbruch lässt sie laufen.
+    // pause_for_update() gibt die .exe frei (zusätzlich zum NSIS-Preinstall-Hook); Settle-Delay für
+    // das Windows-Datei-Handle. (Gemini-Review P0 + Update-Bug Finn)
+    let supervisor_handle = app.clone();
+    let installed = update
+        .download_and_install(
+            |_, _| {},
+            move || {
+                supervisor_handle
+                    .state::<sidecar::BridgeSupervisor>()
+                    .pause_for_update();
+                std::thread::sleep(std::time::Duration::from_millis(1500));
+            },
+        )
+        .await;
+
+    match installed {
+        Ok(_) => {
+            // restart() löst einen Exit aus → SONAR_QUITTING setzen, sonst verhindert der Tray-Guard
+            // (ExitRequested → prevent_exit) den Update-Neustart.
+            SONAR_QUITTING.store(true, std::sync::atomic::Ordering::SeqCst);
+            app.restart();
+        }
+        Err(error) => {
+            // Install gescheitert → Bridge wieder hochfahren, sonst bliebe sie bis zum nächsten
+            // App-Start tot. (Gemini-Review P0 / Codex d)
+            app.state::<sidecar::BridgeSupervisor>().resume_from_update();
+            Err(error.to_string())
+        }
+    }
+}
+
+/// Prüft auf Updates und meldet ein gefundenes per `update://available` ans Frontend (Auto-Suche).
+async fn check_and_announce_update<R: Runtime>(app: &AppHandle<R>) {
+    match check_for_update(app).await {
+        Ok(Some(info)) => {
+            eprintln!("update available: {} → announce", info.version);
+            if let Err(error) = app.emit("update://available", info) {
+                eprintln!("failed to emit update event: {error}");
+            }
+        }
+        Ok(None) => {}
+        Err(error) => eprintln!("update check: {error}"),
     }
 }
 
