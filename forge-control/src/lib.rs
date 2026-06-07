@@ -76,10 +76,49 @@ pub fn capture_primary_png() -> Result<Vec<u8>, String> {
 // Input (enigo)
 // =====================================================================
 
-use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
+use enigo::{Axis, Button, Direction, Enigo, Key, Keyboard, Mouse, Settings};
+
+/// Setzt den Cursor absolut auf (x, y).
+///
+/// **Windows:** via `SetCursorPos` statt enigos `move_mouse(Abs)`. enigos absoluter
+/// `SendInput`-Move-Pfad wurde auf realer Kundenhardware (frostbyte\finn, 2026-06-08)
+/// für JEDE Koordinate (auch 0,0) mit „not all input events were sent (… UIPI)" abgewiesen,
+/// während Tastatur + Wheel (auch `SendInput`) durchgingen → kein Privileg-/UIPI-Problem,
+/// sondern der absolute-Move-Pfad selbst. `SetCursorPos` ist ein anderer API-Pfad und
+/// funktioniert dort. DPI-Awareness (s. `ensure_dpi_aware`) sorgt dafür, dass die
+/// Koordinaten den physischen Capture-Pixeln entsprechen.
+///
+/// **Andere OS:** unverändert enigo (auf dem Server verifiziert).
+#[cfg(windows)]
+fn position_cursor(_enigo: &mut Enigo, x: i32, y: i32) -> Result<(), String> {
+    use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
+    unsafe { SetCursorPos(x, y) }.map_err(|e| format!("SetCursorPos failed: {e}"))
+}
+
+#[cfg(not(windows))]
+fn position_cursor(enigo: &mut Enigo, x: i32, y: i32) -> Result<(), String> {
+    use enigo::Coordinate;
+    enigo.move_mouse(x, y, Coordinate::Abs).map_err(|e| e.to_string())
+}
+
+/// Macht den Prozess Per-Monitor-DPI-aware, damit Cursor-Koordinaten in physischen Pixeln
+/// (= Capture-Pixeln) liegen statt skaliert. Idempotent: ist es schon gesetzt, ignorieren.
+#[cfg(windows)]
+fn ensure_dpi_aware() {
+    use windows::Win32::UI::HiDpi::{
+        SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+    };
+    unsafe {
+        let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    }
+}
+
+#[cfg(not(windows))]
+fn ensure_dpi_aware() {}
 
 /// Führt eine Aktion aus. Erstellt pro Aufruf eine frische Enigo-Instanz (CLI = ein Schuss).
 pub fn perform(action: &Action) -> Result<(), String> {
+    ensure_dpi_aware();
     // Defense-in-depth: Feld-Längen begrenzen. Der Server validiert auch, aber dieses CLI ist
     // eigenständig und darf sich nicht auf den Aufrufer verlassen.
     match action {
@@ -90,16 +129,16 @@ pub fn perform(action: &Action) -> Result<(), String> {
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
     match action {
         Action::MouseMove { x, y } => {
-            enigo.move_mouse(*x, *y, Coordinate::Abs).map_err(|e| e.to_string())?;
+            position_cursor(&mut enigo, *x, *y)?;
         }
         Action::Click { x, y, button } => {
-            enigo.move_mouse(*x, *y, Coordinate::Abs).map_err(|e| e.to_string())?;
+            position_cursor(&mut enigo, *x, *y)?;
             enigo
                 .button(to_button(*button), Direction::Click)
                 .map_err(|e| e.to_string())?;
         }
         Action::DoubleClick { x, y } => {
-            enigo.move_mouse(*x, *y, Coordinate::Abs).map_err(|e| e.to_string())?;
+            position_cursor(&mut enigo, *x, *y)?;
             enigo
                 .button(Button::Left, Direction::Click)
                 .map_err(|e| e.to_string())?;
