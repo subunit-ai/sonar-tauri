@@ -51,6 +51,39 @@ type AccountState = {
 
 type SpaceId = "home" | "forge" | "trace";
 
+/**
+ * Transparente Overlay-Fenster (overlay + overlayControl) laden dieselbe
+ * index.html wie das Hauptfenster. Ohne CSS-Reset bleibt der Browser-Default
+ * `body { margin: 8px }` aktiv → zusammen mit width/height:100% ragt der Inhalt
+ * über den Viewport → horizontale + vertikale Scrollbar (die den Ausblenden-
+ * Button verdeckt haben). Dieser Hook setzt html/body/#root NUR in den
+ * Overlay-Fenstern auf randlos/transparent/overflow-hidden — das Hauptfenster
+ * (eigener Webview) bleibt unberührt und weiterhin scrollbar.
+ */
+function useTransparentChrome() {
+  useEffect(() => {
+    const root = document.getElementById("root");
+    const targets = [document.documentElement, document.body, root].filter(
+      (el): el is HTMLElement => el != null,
+    );
+    const previous = targets.map((el) => el.getAttribute("style") ?? "");
+    for (const el of targets) {
+      el.style.margin = "0";
+      el.style.padding = "0";
+      el.style.width = "100%";
+      el.style.height = "100%";
+      el.style.background = "transparent";
+      el.style.overflow = "hidden";
+    }
+    return () => {
+      targets.forEach((el, index) => {
+        if (previous[index]) el.setAttribute("style", previous[index]);
+        else el.removeAttribute("style");
+      });
+    };
+  }, []);
+}
+
 function App() {
   if (WINDOW_LABEL === "overlay") {
     return <OverlayWindow />;
@@ -755,6 +788,7 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
 
 function OverlayWindow() {
   const [operator, setOperator] = useState("u1");
+  useTransparentChrome();
 
   useEffect(() => {
     getCurrentWindow().setIgnoreCursorEvents(true).catch(console.error);
@@ -799,6 +833,7 @@ function OverlayWindow() {
 
 function OverlayControl() {
   const [pending, setPending] = useState(false);
+  useTransparentChrome();
 
   async function dismiss() {
     setPending(true);
@@ -1235,24 +1270,24 @@ const overlayControlStyles: Record<string, CSSProperties> = {
     background: "transparent",
     boxSizing: "border-box",
     display: "flex",
-    height: "100vh",
+    inset: 0,
     justifyContent: "center",
     margin: 0,
     overflow: "hidden",
-    width: "100vw",
+    position: "fixed",
   },
   button: {
     background: CYAN,
-    border: "1px solid rgba(255,255,255,0.25)",
+    border: "1px solid rgba(255,255,255,0.28)",
     borderRadius: 999,
-    boxShadow: "0 10px 30px rgba(0, 0, 0, 0.45), 0 0 0 4px rgba(6,182,212,0.18)",
+    boxShadow: "0 4px 14px rgba(0, 0, 0, 0.4), 0 0 0 2px rgba(6,182,212,0.22)",
     color: "#03121f",
     cursor: "pointer",
     fontSize: 13,
     fontWeight: 800,
     lineHeight: "18px",
-    minHeight: 38,
-    padding: "9px 20px",
+    minHeight: 36,
+    padding: "8px 18px",
     whiteSpace: "nowrap",
   },
 };

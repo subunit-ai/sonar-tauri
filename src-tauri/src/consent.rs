@@ -16,8 +16,8 @@ const OVERLAY_STATE_EVENT: &str = "overlay://state";
 const OVERLAY_WINDOW_LABEL: &str = "overlay";
 const OVERLAY_CONTROL_LABEL: &str = "overlayControl";
 const OPERATOR_ACTIVE_WINDOW_MS: i128 = 40_000;
-const OVERLAY_CONTROL_WIDTH: u32 = 170;
-const OVERLAY_CONTROL_HEIGHT: u32 = 46;
+const OVERLAY_CONTROL_WIDTH: u32 = 188;
+const OVERLAY_CONTROL_HEIGHT: u32 = 56;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ConsentRequest {
