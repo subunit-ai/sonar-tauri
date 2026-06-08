@@ -73,6 +73,128 @@ pub fn capture_primary_png() -> Result<Vec<u8>, String> {
 }
 
 // =====================================================================
+// Live-Stream (Forge L3) — kontinuierlicher JPEG-Frame-Strom auf stdout
+// =====================================================================
+
+/// Ein kodiertes Stream-Frame: JPEG-Bytes + die ORIGINALE Capture-Auflösung. `width`/`height`
+/// sind bewusst die Original-Maße (NICHT die ggf. herunterskalierten), denn die Operator-Konsole
+/// mappt Klicks anhand dieser Maße auf physische Bildschirm-Pixel — beim Downscaling dürfen die
+/// Klick-Koordinaten nicht mitschrumpfen, sonst landet der Klick falsch.
+pub struct CaptureFrame {
+    pub jpeg: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Kodiert ein bereits gecapturetes RGBA-Bild als JPEG-Frame: optional auf `max_width`
+/// herunterskaliert (Seitenverhältnis erhalten), `quality` 1..=100. Reiner Bild→Bytes-Pfad
+/// ohne Capture/IO → ideal unit-testbar (kein Display nötig). Gibt die ORIGINAL-Maße zurück.
+pub fn encode_frame_jpeg(
+    image: image::RgbaImage,
+    quality: u8,
+    max_width: u32,
+) -> Result<CaptureFrame, String> {
+    let (orig_w, orig_h) = (image.width(), image.height());
+    let mut dynimg = image::DynamicImage::ImageRgba8(image);
+    if max_width > 0 && orig_w > max_width {
+        let new_h = ((orig_h as u64 * max_width as u64) / orig_w as u64).max(1) as u32;
+        dynimg = dynimg.resize_exact(max_width, new_h, image::imageops::FilterType::Triangle);
+    }
+    // JPEG hat keinen Alpha-Kanal → nach RGB konvertieren.
+    let rgb = dynimg.to_rgb8();
+    let mut buf = std::io::Cursor::new(Vec::new());
+    let q = quality.clamp(1, 100);
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, q)
+        .encode_image(&rgb)
+        .map_err(|e| e.to_string())?;
+    Ok(CaptureFrame {
+        jpeg: buf.into_inner(),
+        width: orig_w,
+        height: orig_h,
+    })
+}
+
+/// Ein einzelnes Stream-Frame: primären Monitor capturen → `encode_frame_jpeg`.
+pub fn capture_primary_jpeg(quality: u8, max_width: u32) -> Result<CaptureFrame, String> {
+    let monitors = xcap::Monitor::all().map_err(|e| e.to_string())?;
+    let monitor = monitors
+        .into_iter()
+        .next()
+        .ok_or_else(|| "kein Monitor gefunden".to_string())?;
+    let image = monitor.capture_image().map_err(|e| e.to_string())?;
+    encode_frame_jpeg(image, quality, max_width)
+}
+
+/// Schreibt ein Frame ins length-prefixed Protokoll: 4 Byte big-endian Länge (u32) + JPEG-Bytes.
+pub fn write_frame(out: &mut impl std::io::Write, jpeg: &[u8]) -> std::io::Result<()> {
+    out.write_all(&(jpeg.len() as u32).to_be_bytes())?;
+    out.write_all(jpeg)
+}
+
+/// Streamt den primären Monitor als JPEG-Frames auf stdout (Protokoll s. `main.rs::Cmd::Stream`).
+///
+/// Beendet sauber, sobald die Bridge die Pipe schließt: ein Hintergrund-Thread liest stdin und
+/// setzt bei EOF ein Stop-Flag; zusätzlich bricht ein stdout-Schreibfehler (Leser weg) die Schleife
+/// ab. Capture-/Encode-Fehler überspringen nur das jeweilige Frame statt den Prozess zu beenden.
+pub fn run_stream(fps: u8, quality: u8, max_width: u32) -> Result<(), String> {
+    use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    let fps = fps.clamp(1, 30);
+    let frame_interval = Duration::from_millis(1000 / fps as u64);
+
+    // stdin-EOF = Stop-Signal (die Bridge schließt die Pipe, wenn der Stream enden soll).
+    let stop = Arc::new(AtomicBool::new(false));
+    {
+        let stop = Arc::clone(&stop);
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 256];
+            loop {
+                match std::io::stdin().read(&mut buf) {
+                    Ok(0) | Err(_) => {
+                        stop.store(true, Ordering::SeqCst);
+                        break;
+                    }
+                    Ok(_) => {} // beliebige stdin-Daten ignorieren; nur EOF beendet
+                }
+            }
+        });
+    }
+
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+
+    // Header zuerst — mit der ORIGINAL-Auflösung fürs Klick-Mapping (ein erstes Frame liefert sie).
+    let first = capture_primary_jpeg(quality, max_width)?;
+    let header = format!(
+        "{{\"v\":1,\"w\":{},\"h\":{},\"fps\":{},\"format\":\"jpeg\"}}\n",
+        first.width, first.height, fps
+    );
+    out.write_all(header.as_bytes()).map_err(|e| e.to_string())?;
+    if write_frame(&mut out, &first.jpeg).is_err() || out.flush().is_err() {
+        return Ok(()); // Leser schon weg
+    }
+
+    while !stop.load(Ordering::SeqCst) {
+        let t0 = Instant::now();
+        match capture_primary_jpeg(quality, max_width) {
+            Ok(frame) => {
+                if write_frame(&mut out, &frame.jpeg).is_err() || out.flush().is_err() {
+                    break; // stdout zu → Bridge ist weg
+                }
+            }
+            Err(e) => eprintln!("[forge-control] Frame übersprungen: {e}"),
+        }
+        if let Some(rest) = frame_interval.checked_sub(t0.elapsed()) {
+            std::thread::sleep(rest);
+        }
+    }
+    Ok(())
+}
+
+// =====================================================================
 // Input (enigo)
 // =====================================================================
 
@@ -287,5 +409,33 @@ mod tests {
         );
         assert_eq!(split_combo("Return").unwrap(), (vec![], "return".to_string()));
         assert!(split_combo("").is_err());
+    }
+
+    #[test]
+    fn encode_frame_jpeg_produces_valid_jpeg_and_reports_original_dims() {
+        let img = image::RgbaImage::from_pixel(120, 80, image::Rgba([10, 120, 200, 255]));
+        let frame = encode_frame_jpeg(img, 55, 0).unwrap();
+        // JPEG-Magic SOI: FF D8 FF
+        assert_eq!(&frame.jpeg[0..3], &[0xFF, 0xD8, 0xFF]);
+        assert!(frame.jpeg.len() > 4);
+        // Original-Maße werden gemeldet (Klick-Koordinatenraum).
+        assert_eq!((frame.width, frame.height), (120, 80));
+    }
+
+    #[test]
+    fn encode_frame_jpeg_downscales_but_reports_original_dims() {
+        let img = image::RgbaImage::from_pixel(1000, 500, image::Rgba([0, 0, 0, 255]));
+        let frame = encode_frame_jpeg(img, 40, 200).unwrap();
+        // Auch herunterskaliert bleibt die GEMELDETE Auflösung die originale — sonst landen Klicks falsch.
+        assert_eq!((frame.width, frame.height), (1000, 500));
+        assert_eq!(&frame.jpeg[0..2], &[0xFF, 0xD8]);
+    }
+
+    #[test]
+    fn write_frame_prefixes_big_endian_length() {
+        let mut buf: Vec<u8> = Vec::new();
+        write_frame(&mut buf, &[1, 2, 3, 4, 5]).unwrap();
+        assert_eq!(&buf[0..4], &[0, 0, 0, 5]); // u32 big-endian
+        assert_eq!(&buf[4..], &[1, 2, 3, 4, 5]);
     }
 }
