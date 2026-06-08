@@ -265,6 +265,15 @@ impl ConsentController {
             if *self.lock_overlay_dismissed() {
                 self.hide_overlay_windows(app);
             } else {
+                // macOS: das transparente, randlose Fullscreen-Overlay rendert
+                // dort als schwarzer eigener Fullscreen-Space (WKWebView + nativer
+                // Fullscreen) → nie anzeigen. Es ist nur ein "u1 arbeitet"-Hinweis
+                // (für Kundengeräte), kein funktionaler Teil. Andere Plattformen
+                // unverändert. (tauri.conf.json hält das Fenster zusätzlich
+                // non-fullscreen, damit es beim Start keinen Space belegt.)
+                #[cfg(target_os = "macos")]
+                self.hide_overlay_windows(app);
+                #[cfg(not(target_os = "macos"))]
                 self.show_overlay_windows(app);
             }
             return;
