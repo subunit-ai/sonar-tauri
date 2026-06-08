@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/trace-tauri
-          ref: 0b46ab67da4ef4314f0b7049c9d35dfd3c9ed8de # v0.1.4 (UIA-Provider Inkr. 1+2a+3+4: Fokus, Clipboard-Copy, getippte Wert-Länge, aktive Browser-URL)
+          ref: 124167da65d493bf8ebb14c78cf3334ef1a989dd # v0.1.5 (UIA-Provider Inkr. 1+2a+3+4 + COM-Init-Hygiene + Browser-URL-Throttle)
           ssh-key: ${{ secrets.TRACE_DEPLOY_KEY }}
           path: trace-co
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
