@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/bridge-tauri
-          ref: 66c48096c6068419b1b9a70ef67d8d4dead55116 # v0.4.4 (loopback-origin gate: served UI darf access-mode tokenlos togglen — Mac-Full-Access-Toggle-Fix; + v0.4.3 Clock-Skew-Fix)
+          ref: 9aacbf237c8548b930127f8f15b1718162153697 # v0.4.5 (Forge L3: WS-close→stop live-capture (privacy) + stream_id-gebundener stream.stop; inkl. v0.4.4 loopback-origin gate + v0.4.3 Clock-Skew-Fix)
           ssh-key: ${{ secrets.BRIDGE_DEPLOY_KEY }}
           path: bridge-src
       - name: Checkout trace-engine source (pinned, read-only deploy key)
