@@ -310,10 +310,23 @@ pub fn ensure_fresh(app: &AppHandle) {
             c.subunit_token_issued_at = now;
             let _ = c.save();
         }
-        Err(e) => {
-            eprintln!("token refresh failed: {e}");
-            // Access-Token ist abgelaufen + Refresh fehlgeschlagen → Access leeren,
-            // Refresh-Token für späteren Retry behalten.
+        Err(RefreshFail::TokenDead) => {
+            eprintln!("refresh token rejected by server (4xx) — clearing it; re-login required");
+            // Token ist endgültig ungültig (revoked/rotiert/reuse). BEIDE Tokens leeren:
+            // ein behaltenes totes Refresh-Token würde bei jedem ensure_fresh erneut
+            // probiert, und jeder Versuch außerhalb des Server-Grace-Fensters löst einen
+            // Reuse-Kill ALLER Sessions aus. X-API-Key-Fallback greift bis zum Re-Login.
+            let st = app.state::<AppState>();
+            let mut c = st.config.lock();
+            c.subunit_access_token.clear();
+            c.subunit_refresh_token.clear();
+            c.subunit_token_issued_at = 0.0;
+            c.subunit_token_expires_in = 0;
+            let _ = c.save();
+        }
+        Err(RefreshFail::Transient(e)) => {
+            eprintln!("token refresh failed (transient): {e}");
+            // Netzwerk/5xx/429 — Token evtl. noch gültig. Nur Access leeren, Refresh behalten.
             let st = app.state::<AppState>();
             let mut c = st.config.lock();
             c.subunit_access_token.clear();
@@ -324,25 +337,42 @@ pub fn ensure_fresh(app: &AppHandle) {
     }
 }
 
-fn do_refresh(refresh_token: &str) -> anyhow::Result<(String, String, i32)> {
+/// Warum ein Refresh fehlschlug — entscheidet, ob das Refresh-Token behalten/verworfen wird.
+enum RefreshFail {
+    /// Server lehnt das Token ab (HTTP 4xx außer 429): revoked/rotiert/reuse — es wird
+    /// nie wieder funktionieren. Verwerfen, damit wir /refresh nicht weiter hämmern, was
+    /// außerhalb des Server-Grace-Fensters einen Reuse-Kill aller Sessions auslöst.
+    TokenDead,
+    /// Transient (Netzwerk, Timeout, 5xx, 429). Token behalten und später erneut versuchen.
+    Transient(String),
+}
+
+fn do_refresh(refresh_token: &str) -> Result<(String, String, i32), RefreshFail> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(20))
-        .build()?;
+        .build()
+        .map_err(|e| RefreshFail::Transient(e.to_string()))?;
     let resp = client
         .post(format!("{AUTH_BASE}/refresh"))
         .json(&serde_json::json!({ "refresh_token": refresh_token }))
-        .send()?;
-    if !resp.status().is_success() {
-        anyhow::bail!("refresh {}", resp.status());
+        .send()
+        .map_err(|e| RefreshFail::Transient(e.to_string()))?;
+    let status = resp.status();
+    if !status.is_success() {
+        // 4xx (außer 429 Rate-Limit) = das Token selbst ist abgelehnt → tot.
+        if status.is_client_error() && status.as_u16() != 429 {
+            return Err(RefreshFail::TokenDead);
+        }
+        return Err(RefreshFail::Transient(format!("refresh {status}")));
     }
-    let j: serde_json::Value = resp.json()?;
+    let j: serde_json::Value = resp.json().map_err(|e| RefreshFail::Transient(e.to_string()))?;
     let access = j
         .get("access_token")
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
     if access.is_empty() {
-        anyhow::bail!("refresh returned no access token");
+        return Err(RefreshFail::Transient("refresh returned no access token".into()));
     }
     Ok((
         access,
