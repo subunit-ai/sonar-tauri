@@ -39,3 +39,6 @@ trace-src
 
 # Vendored forge-control sidecar (Rust) — Build-Output nicht committen
 forge-control/target
+
+# SPS breadcrumb (intern)
+.u1/
