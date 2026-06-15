@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/bridge-tauri
-          ref: 9aacbf237c8548b930127f8f15b1718162153697 # v0.4.5 (Forge L3: WS-close→stop live-capture (privacy) + stream_id-gebundener stream.stop; inkl. v0.4.4 loopback-origin gate + v0.4.3 Clock-Skew-Fix)
+          ref: 57fa7a3a24bc60d90a442adeb02a5189bca138c6 # v0.4.6 (Pairing-Stabilität: rotierten refresh_token persistieren → kein Family-Kill/Re-Login mehr; fail-closed /me + Reconnect-Härtung; inkl. v0.4.5 Forge-L3-Teardown)
           ssh-key: ${{ secrets.BRIDGE_DEPLOY_KEY }}
           path: bridge-src
       - name: Checkout trace-engine source (pinned, read-only deploy key)
