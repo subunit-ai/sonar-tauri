@@ -13,6 +13,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { BridgeCard, type BridgeStatus } from "./BridgeCard";
 import { ForgeAccessCard, type ConsentState } from "./ForgeAccessCard";
+import { PermissionOnboarding } from "./PermissionOnboarding";
 import { CrystalOverlay } from "./CrystalOverlay";
 import { ConsentPrompt, type ConsentRequest } from "./ConsentPrompt";
 import { SonarLogo } from "./SonarLogo";
@@ -464,6 +465,8 @@ const HomeSpace = memo(function HomeSpace({
         Sonar bündelt deine On-Site-Werkzeuge in einer App. Die Bridge ist das Fundament —
         Forge und Trace laufen darauf.
       </p>
+
+      <PermissionOnboarding />
 
       <BridgeCard status={status} lastChecked={lastChecked} />
 

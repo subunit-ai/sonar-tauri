@@ -72,6 +72,11 @@
         "installerHooks": "./installer-hooks.nsh"
       }
     },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-",
+      "entitlements": "entitlements.plist"
+    },
     "longDescription": "Sonar — der Agent auf der Maschine. Powered by Subunit Bridge (als Sidecar gebündelt); Forge (Remote-Support) und Trace (Task-Mining) leben als eigene Spaces in einer App.",
     "shortDescription": "Sonar (Forge + Trace)"
   },

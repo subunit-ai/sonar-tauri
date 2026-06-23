@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Eingebettet in die macOS-Code-Signatur (bundle.macOS.entitlements). Tauris
+	  Signing aktiviert die Hardened Runtime auf Apple Silicon.
+
+	  Forge (xcap Screen-Capture, enigo Input-Synthese) braucht KEINE speziellen
+	  Entitlements: Screen-Recording und Accessibility laufen rein ueber TCC
+	  (System Settings -> Datenschutz), die der Onboarding-Wizard (1.2) anstoesst.
+	  Dafuer gibt es KEINE Info.plist-Usage-Strings (anders als Mic/Cam) -> deshalb
+	  hat Sonar keine Info.plist mit NSScreenCapture/NSAccessibility (existiert nicht).
+
+	  disable-library-validation: erlaubt der App, die gebuendelten Sidecars
+	  (subunit-bridge, forge-control) auszufuehren, falls sie nicht mit identischer
+	  Identitaet signiert sind (self-signed Zwischenschritt). Am echten signierten
+	  Mac-Build (1.1b, nach Developer-ID-Cert) verifizieren und ggf. entfernen,
+	  wenn alle Binaries mit derselben Identitaet signiert werden.
+	-->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>
