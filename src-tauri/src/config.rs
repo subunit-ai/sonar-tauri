@@ -37,8 +37,10 @@ pub struct Config {
     /// Trace-Task-Mining: ob die Hintergrund-Erfassung läuft. PERSISTIERT → überlebt
     /// App-Schließen UND Reboot und wird beim Start automatisch wieder gearmt (lib.rs setup).
     /// So kann der Nutzer die Aufzeichnung NICHT durch Fenster-Schließen aushebeln — der Sinn
-    /// des Task-Minings bleibt erhalten. Aktivierung = bewusster Schritt (Onboarding/Toggle, =
-    /// Consent); einmal an → bleibt an über Neustarts. Überlebt auch Logout (NICHT in clear_account).
+    /// des Task-Minings bleibt erhalten. Aktivierung = bewusster Schritt (expliziter Toggle =
+    /// Opt-in); einmal an → bleibt an über App-Schließen/Reboot. Wird beim LOGOUT gelöscht
+    /// (clear_account) + Engine gestoppt → kein Recorder ohne angemeldeten, einwilligenden
+    /// Account (Security-Review H1). „Beim Kunden immer an" kommt über den Consent-Flow, nicht hier.
     #[serde(default)]
     pub trace_capture_enabled: bool,
 }
@@ -100,6 +102,9 @@ impl Config {
         self.subunit_workspace_id.clear();
         self.account_email.clear();
         self.account_is_operator = false;
+        // Consent-Widerruf beim Logout: Erfassung NICHT über einen Account-/Owner-Wechsel
+        // hinweg weiterlaufen lassen (Security-Review H1). Engine wird in account_logout gestoppt.
+        self.trace_capture_enabled = false;
     }
 }
 

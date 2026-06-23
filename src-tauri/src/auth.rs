@@ -58,31 +58,13 @@ pub async fn account_login(app: AppHandle) -> Result<AccountState, String> {
     // der Auto-Re-Pair beim nächsten Bridge-Status-Poll.
     let _ = adopt_into_bridge(&app).await;
 
-    // KUNDEN-GERÄT → Trace-Hintergrund-Erfassung automatisch aktivieren. Beim Kunden soll Trace
-    // IMMER laufen (managed agent, Consent = Onboarding); ein op=subunit-Team-Gerät bleibt
-    // unangetastet (würde sonst die eigene Team-Aktivität erfassen). `op` ist nur ein UI-Label,
-    // KEINE Sicherheitsgrenze (die echte Access-Policy erzwingt die Bridge serverseitig) — hier
-    // steuert es nur das Default-Verhalten. engine.start() ist idempotent (Worker-Mutex).
-    {
-        let st = app.state::<AppState>();
-        let (logged_in, is_operator) = {
-            let c = st.config.lock();
-            (c.is_logged_in(), c.account_is_operator)
-        };
-        if logged_in && !is_operator {
-            {
-                let mut c = st.config.lock();
-                if !c.trace_capture_enabled {
-                    c.trace_capture_enabled = true;
-                    let _ = c.save();
-                }
-            }
-            if let Err(error) = app.state::<trace_engine::TraceEngine>().start() {
-                eprintln!("[trace] Auto-Enable nach Kunden-Pair fehlgeschlagen: {error}");
-            }
-        }
-    }
-
+    // KEIN Auto-Enable der Trace-Erfassung beim Pairing (Security-Review HOLD 2026-06-23):
+    // Capture auf Basis des client-dekodierten, UNVERIFIZIERTEN `op`-Claims zu starten wäre
+    // fälschbar + fail-open (würde bei fehlendem op auch Team-Geräte erfassen) und ohne
+    // erfasste Einwilligung ein rechtlicher Blocker (DSGVO + MINING-PIPELINE §10 „opt-in +
+    // Consent-Gate"). Erfassung wird AUSSCHLIESSLICH per explizitem `trace_start` (Opt-in,
+    // persistiert + Auto-Arm) aktiviert. „Beim Kunden immer an" kommt über den Onboarding-
+    // Consent-Flow (signierte capture_policy von der Bridge + consent_at) — eigener Block.
     Ok(account_state(app))
 }
 
@@ -145,6 +127,10 @@ pub async fn account_logout(app: AppHandle) -> Result<(), String> {
     if let Err(error) = logout_from_bridge().await {
         eprintln!("[auth] Bridge-Entkopplung beim Logout fehlgeschlagen (Abmelden läuft trotzdem): {error}");
     }
+    // Logout = laufende Trace-Erfassung stoppen (clear_account löscht zusätzlich den Capture-Flag).
+    // Sonst liefe der Hintergrund-Recorder nach dem Abmelden / bei Geräte-Neuzuweisung ohne
+    // angemeldeten, einwilligenden Account weiter. (Security-Review H1, 2026-06-23)
+    let _ = app.state::<trace_engine::TraceEngine>().stop();
     let state = app.state::<AppState>();
     let mut config = state.config.lock();
     config.clear_account();
