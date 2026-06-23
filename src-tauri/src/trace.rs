@@ -3,6 +3,7 @@
 
 use crate::bridge_client::BridgeClient;
 use crate::config::AppState;
+use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::State;
 use trace_engine::{ActivityEvent, AppUsage, TraceEngine, TraceStatus};
@@ -12,27 +13,53 @@ pub fn trace_status(engine: State<'_, TraceEngine>) -> Result<TraceStatus, Strin
     engine.status()
 }
 
+/// Consent-Status fürs Trace-Space-UI: steuert den Transparenz-Screen vs. „läuft seit …".
+#[derive(Serialize)]
+pub struct TraceConsent {
+    /// "unset" | "granted" | "revoked"
+    pub consent: String,
+    /// Unix-Sekunden der Einwilligung (0 = keine).
+    pub consent_at: f64,
+}
+
 #[tauri::command]
-pub fn trace_start(engine: State<'_, TraceEngine>, state: State<'_, AppState>) -> Result<(), String> {
-    // Flag persistieren → der Auto-Arm beim nächsten Start (lib.rs setup) erfasst wieder,
-    // selbst wenn die App geschlossen oder das Gerät neu gestartet wurde.
+pub fn trace_consent_state(state: State<'_, AppState>) -> TraceConsent {
+    let cfg = state.config.lock();
+    TraceConsent {
+        consent: cfg.trace_consent.clone(),
+        consent_at: cfg.trace_consent_at,
+    }
+}
+
+/// Einwilligung ERTEILEN (affirmative Aktion im Transparenz-Screen). Persistiert "granted" +
+/// Zeitstempel → Auto-Arm beim nächsten Start; startet die Erfassung sofort. Das ist die EINZIGE
+/// Stelle, an der Capture beginnt — nie automatisch, nie an einem unverifizierten Claim.
+#[tauri::command]
+pub fn trace_consent_grant(engine: State<'_, TraceEngine>, state: State<'_, AppState>) -> Result<(), String> {
     {
         let mut cfg = state.config.lock();
-        cfg.trace_capture_enabled = true;
+        cfg.trace_consent = "granted".to_string();
+        cfg.trace_consent_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
         if let Err(error) = cfg.save() {
-            eprintln!("[trace] Capture-Flag speichern fehlgeschlagen: {error}");
+            eprintln!("[trace] Consent speichern fehlgeschlagen: {error}");
         }
     }
     engine.start()
 }
 
+/// Einwilligung WIDERRUFEN (Stopp-Button). "revoked" gewinnt immer + armt nie still neu;
+/// stoppt die laufende Erfassung. Re-Aktivierung erfordert eine frische Einwilligung.
 #[tauri::command]
-pub fn trace_stop(engine: State<'_, TraceEngine>, state: State<'_, AppState>) -> Result<(), String> {
+pub fn trace_consent_revoke(engine: State<'_, TraceEngine>, state: State<'_, AppState>) -> Result<(), String> {
     {
         let mut cfg = state.config.lock();
-        cfg.trace_capture_enabled = false;
+        cfg.trace_consent = "revoked".to_string();
+        cfg.trace_consent_at = 0.0;
         if let Err(error) = cfg.save() {
-            eprintln!("[trace] Capture-Flag speichern fehlgeschlagen: {error}");
+            eprintln!("[trace] Consent speichern fehlgeschlagen: {error}");
         }
     }
     engine.stop()

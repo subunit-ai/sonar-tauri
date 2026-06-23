@@ -34,19 +34,27 @@ pub struct Config {
     /// (NICHT in clear_account zurückgesetzt).
     #[serde(default)]
     pub forge_overlay_enabled: bool,
-    /// Trace-Task-Mining: ob die Hintergrund-Erfassung läuft. PERSISTIERT → überlebt
-    /// App-Schließen UND Reboot und wird beim Start automatisch wieder gearmt (lib.rs setup).
-    /// So kann der Nutzer die Aufzeichnung NICHT durch Fenster-Schließen aushebeln — der Sinn
-    /// des Task-Minings bleibt erhalten. Aktivierung = bewusster Schritt (expliziter Toggle =
-    /// Opt-in); einmal an → bleibt an über App-Schließen/Reboot. Wird beim LOGOUT gelöscht
-    /// (clear_account) + Engine gestoppt → kein Recorder ohne angemeldeten, einwilligenden
-    /// Account (Security-Review H1). „Beim Kunden immer an" kommt über den Consent-Flow, nicht hier.
+    /// Trace-Consent-Status (Security-Review B3): "unset" | "granted" | "revoked".
+    /// Die Hintergrund-Erfassung läuft AUSSCHLIESSLICH bei "granted" — gesetzt durch eine
+    /// explizite, affirmative Einwilligung im Trace-Space (Transparenz-Screen). PERSISTIERT →
+    /// Auto-Arm beim Launch (lib.rs setup) NUR bei "granted"; so überlebt eine einmal erteilte
+    /// Einwilligung App-Schließen + Reboot („beim Kunden immer an"), ohne dass jemand sie durch
+    /// Fenster-Schließen aushebelt. "revoked" (Stopp-Button/Logout) gewinnt IMMER und armt nie
+    /// still neu — Re-Aktivierung erfordert frische Einwilligung. NIE an einem unverifizierten
+    /// Claim auto-aktiviert (der entfernte op-Pfad war der Blocker).
+    #[serde(default = "consent_unset")]
+    pub trace_consent: String,
+    /// Unix-Sekunden der Einwilligung (Audit-Provenance; wird als consent_at zu Nexus propagiert). 0 = keine.
     #[serde(default)]
-    pub trace_capture_enabled: bool,
+    pub trace_consent_at: f64,
 }
 
-// Manuelles Default — die persistierten Defaults explizit halten (forge_overlay_enabled AUS,
-// trace_capture_enabled AUS; letzteres wird bei Kunden-Pairing automatisch aktiviert, s. auth.rs).
+fn consent_unset() -> String {
+    "unset".to_string()
+}
+
+// Manuelles Default — persistierte Defaults explizit (forge_overlay AUS, Trace-Consent "unset" →
+// keine Erfassung ohne explizite Einwilligung).
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -58,7 +66,8 @@ impl Default for Config {
             account_email: String::new(),
             account_is_operator: false,
             forge_overlay_enabled: false,
-            trace_capture_enabled: false,
+            trace_consent: "unset".to_string(),
+            trace_consent_at: 0.0,
         }
     }
 }
@@ -94,6 +103,11 @@ impl Config {
         !self.subunit_access_token.is_empty() || !self.subunit_refresh_token.is_empty()
     }
 
+    /// Läuft die Erfassung mit erteilter Einwilligung? Einziges Gate für Capture-Start/Auto-Arm.
+    pub fn capture_consented(&self) -> bool {
+        self.trace_consent == "granted"
+    }
+
     pub fn clear_account(&mut self) {
         self.subunit_access_token.clear();
         self.subunit_refresh_token.clear();
@@ -104,7 +118,8 @@ impl Config {
         self.account_is_operator = false;
         // Consent-Widerruf beim Logout: Erfassung NICHT über einen Account-/Owner-Wechsel
         // hinweg weiterlaufen lassen (Security-Review H1). Engine wird in account_logout gestoppt.
-        self.trace_capture_enabled = false;
+        self.trace_consent = "revoked".to_string();
+        self.trace_consent_at = 0.0;
     }
 }
 

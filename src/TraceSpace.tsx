@@ -23,6 +23,29 @@ type AppUsage = {
   episode_count: number;
 };
 
+type TraceConsent = {
+  consent: "unset" | "granted" | "revoked";
+  consent_at: number; // Unix-Sekunden (0 = keine)
+};
+
+// Transparenz: exakt was erfasst wird (MINING-PIPELINE §2) — und was NICHT.
+const CAPTURED = [
+  "Welche App/Programm im Vordergrund ist",
+  "Fenstertitel (lokal maskiert, sensible Titel werden geschwärzt)",
+  "Bedientes UI-Element + Aktionstyp (Klick, Eingabe, Kopieren, Wechsel)",
+  "Aktive Web-Domain (nur Domain, NIE volle Adresse/Inhalt)",
+  "Eingabe-LÄNGE (nur die Zeichenanzahl, NIE der getippte Text)",
+  "Kopieren→Einfügen-Brücken (als Prüfsumme, NIE der Inhalt)",
+];
+const NOT_CAPTURED = [
+  "Tastatureingaben im Klartext",
+  "Inhalte der Zwischenablage",
+  "Screenshots / Bildschirminhalt",
+  "Mikrofon / Kamera",
+  "Netzwerk-/Datei-Inhalte",
+  "Passwörter, IBANs, sensible Felder (lokal geschwärzt)",
+];
+
 const POLL_MS = 4000;
 
 function fmtDuration(secs: number): string {
@@ -40,6 +63,7 @@ function fmtClock(unixSecs: number): string {
 
 export const TraceSpace = memo(function TraceSpace() {
   const [status, setStatus] = useState<TraceStatus | null>(null);
+  const [consent, setConsent] = useState<TraceConsent | null>(null);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [usage, setUsage] = useState<AppUsage[]>([]);
   const [busy, setBusy] = useState(false);
@@ -47,9 +71,13 @@ export const TraceSpace = memo(function TraceSpace() {
 
   const refresh = useCallback(async () => {
     try {
-      const s = await invoke<TraceStatus>("trace_status");
+      const [s, cs] = await Promise.all([
+        invoke<TraceStatus>("trace_status"),
+        invoke<TraceConsent>("trace_consent_state"),
+      ]);
       // Prevent unnecessary React re-renders if Tauri returns identical data.
       setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(s) ? prev : s));
+      setConsent((prev) => (JSON.stringify(prev) === JSON.stringify(cs) ? prev : cs));
       setError(null);
       if (s.total_events > 0) {
         // Heute 00:00 als "since" für die App-Nutzung.
@@ -77,12 +105,11 @@ export const TraceSpace = memo(function TraceSpace() {
     return () => window.clearInterval(id);
   }, [refresh]);
 
-  async function toggleCapture() {
-    if (!status) return;
+  async function setConsentChoice(grant: boolean) {
     setBusy(true);
     setError(null);
     try {
-      await invoke(status.capturing ? "trace_stop" : "trace_start");
+      await invoke(grant ? "trace_consent_grant" : "trace_consent_revoke");
       await refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -92,6 +119,7 @@ export const TraceSpace = memo(function TraceSpace() {
   }
 
   const capturing = status?.capturing ?? false;
+  const granted = consent?.consent === "granted";
 
   return (
     <div style={styles.space}>
@@ -102,44 +130,70 @@ export const TraceSpace = memo(function TraceSpace() {
         lokal maskiert — übertragen werden nur die maskierten Aktivitäts-Signale.
       </p>
 
-      <section style={styles.controlCard}>
-        <div style={styles.controlRow}>
-          <span
-            style={{
-              ...styles.badge,
-              background: capturing ? "rgba(6,182,212,0.16)" : "rgba(148,163,184,0.14)",
-              border: capturing ? "1px solid rgba(6,182,212,0.55)" : "1px solid rgba(148,163,184,0.4)",
-              color: capturing ? "#a5f3fc" : "#cbd5e1",
-            }}
-          >
-            <span
-              style={{
-                ...styles.dot,
-                background: capturing ? "#06b6d4" : "#64748b",
-              }}
-            />
-            {capturing ? "Erfassung läuft" : "Erfassung aus"}
-          </span>
+      {!granted ? (
+        // CONSENT-GATE: ohne erteilte Einwilligung wird NICHTS erfasst. Transparenz zuerst.
+        <section style={styles.consentCard}>
+          <div style={styles.consentHead}>Einwilligung zur Aktivitäts-Erfassung</div>
+          <p style={styles.consentLead}>
+            Trace erfasst — nur mit deiner Einwilligung — maskierte Signale deiner PC-Nutzung, um
+            automatisierbare Abläufe zu erkennen. Du kannst die Einwilligung jederzeit widerrufen.
+          </p>
+          <div style={styles.consentGrid}>
+            <div style={styles.consentCol}>
+              <div style={styles.consentColHeadOk}>✓ Was erfasst wird</div>
+              {CAPTURED.map((t) => (
+                <div key={t} style={styles.consentItem}>{t}</div>
+              ))}
+            </div>
+            <div style={styles.consentCol}>
+              <div style={styles.consentColHeadNo}>✕ Was NICHT erfasst wird</div>
+              {NOT_CAPTURED.map((t) => (
+                <div key={t} style={styles.consentItem}>{t}</div>
+              ))}
+            </div>
+          </div>
           <button
-            disabled={busy || !status}
-            onClick={toggleCapture}
-            style={{
-              ...styles.toggle,
-              background: capturing ? "#991b1b" : "#06b6d4",
-              border: capturing ? "1px solid #991b1b" : "1px solid #06b6d4",
-              color: capturing ? "#fff" : "#0a1424",
-              opacity: busy || !status ? 0.6 : 1,
-            }}
+            disabled={busy}
+            onClick={() => setConsentChoice(true)}
+            style={{ ...styles.toggle, background: "#06b6d4", border: "1px solid #06b6d4", color: "#0a1424", opacity: busy ? 0.6 : 1, alignSelf: "flex-start" }}
             type="button"
           >
-            {capturing ? "Stoppen" : "Erfassung starten"}
+            Ich willige ein und starte die Erfassung
           </button>
-        </div>
-        <div style={styles.metaRow}>
-          <span>{status?.total_events ?? 0} Episoden</span>
-          {status?.last_event_at ? <span>zuletzt {fmtClock(status.last_event_at)}</span> : null}
-        </div>
-      </section>
+          {consent?.consent === "revoked" ? (
+            <div style={styles.metaRow}><span>Einwilligung widerrufen — Erfassung ist gestoppt.</span></div>
+          ) : null}
+        </section>
+      ) : (
+        <section style={styles.controlCard}>
+          <div style={styles.controlRow}>
+            <span
+              style={{
+                ...styles.badge,
+                background: capturing ? "rgba(6,182,212,0.16)" : "rgba(234,179,8,0.14)",
+                border: capturing ? "1px solid rgba(6,182,212,0.55)" : "1px solid rgba(234,179,8,0.4)",
+                color: capturing ? "#a5f3fc" : "#fde68a",
+              }}
+            >
+              <span style={{ ...styles.dot, background: capturing ? "#06b6d4" : "#eab308" }} />
+              {capturing ? "Erfassung läuft" : "Eingewilligt — startet…"}
+            </span>
+            <button
+              disabled={busy}
+              onClick={() => setConsentChoice(false)}
+              style={{ ...styles.toggle, background: "#991b1b", border: "1px solid #991b1b", color: "#fff", opacity: busy ? 0.6 : 1 }}
+              type="button"
+            >
+              Erfassung stoppen (Einwilligung widerrufen)
+            </button>
+          </div>
+          <div style={styles.metaRow}>
+            {consent && consent.consent_at > 0 ? <span>eingewilligt {fmtClock(consent.consent_at)}</span> : null}
+            <span>{status?.total_events ?? 0} Episoden</span>
+            {status?.last_event_at ? <span>zuletzt {fmtClock(status.last_event_at)}</span> : null}
+          </div>
+        </section>
+      )}
 
       {error ? <div style={styles.error}>{error}</div> : null}
 
@@ -170,11 +224,11 @@ export const TraceSpace = memo(function TraceSpace() {
         </section>
       ) : null}
 
-      {!capturing && (status?.total_events ?? 0) === 0 ? (
+      {granted && !capturing && (status?.total_events ?? 0) === 0 ? (
         <div style={styles.empty}>
           <SonarLogo size={40} />
           <p style={styles.emptyText}>
-            Noch keine Daten. Starte die Erfassung, um Arbeitsabläufe zu sammeln.
+            Noch keine Daten — die Erfassung läuft an und sammelt im Hintergrund.
           </p>
         </div>
       ) : null}
@@ -284,4 +338,21 @@ const styles: Record<string, CSSProperties> = {
     textAlign: "center",
   },
   emptyText: { color: "#94a3b8", fontSize: 14, margin: 0, maxWidth: 360 },
+  consentCard: {
+    background: "rgba(15, 26, 44, 0.6)",
+    border: "1px solid rgba(6, 182, 212, 0.28)",
+    borderRadius: 12,
+    boxSizing: "border-box",
+    display: "flex",
+    flexDirection: "column",
+    gap: 14,
+    padding: "18px 18px 16px",
+  },
+  consentHead: { color: "#ecfeff", fontSize: 15, fontWeight: 800 },
+  consentLead: { color: "#94a3b8", fontSize: 13, lineHeight: "20px", margin: 0 },
+  consentGrid: { display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr" },
+  consentCol: { display: "flex", flexDirection: "column", gap: 6 },
+  consentColHeadOk: { color: "#a5f3fc", fontSize: 12, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase" },
+  consentColHeadNo: { color: "#fca5a5", fontSize: 12, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase" },
+  consentItem: { color: "#cbd5e1", fontSize: 12.5, lineHeight: "17px" },
 };

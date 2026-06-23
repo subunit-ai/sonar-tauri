@@ -188,20 +188,19 @@ pub fn run() {
                 });
             }
 
-            // TRACE AUTO-ARM: war die Erfassung aktiviert (persistierter Flag), starten wir sie
-            // beim Launch automatisch wieder. Sonar ist ein Hintergrund-Agent — die Aufzeichnung
-            // darf NICHT davon abhängen, dass jemand ein Fenster offen hält oder neu togglet.
-            // Zusammen mit Autostart-beim-Login (s.u.) + Close-to-Tray = lückenlose Hintergrund-
-            // Erfassung, die der Nutzer nicht versehentlich aushebelt.
+            // TRACE AUTO-ARM: NUR wenn eine Einwilligung erteilt wurde (trace_consent == "granted").
+            // Eine einmal erteilte Einwilligung überlebt App-Schließen + Reboot → lückenlose
+            // Hintergrund-Erfassung („beim Kunden immer an"), ohne dass jemand sie durch Fenster-
+            // Schließen aushebelt. Ohne Einwilligung (unset/revoked) startet hier NICHTS.
             {
-                let armed = app
+                let consented = app
                     .state::<config::AppState>()
                     .config
                     .lock()
-                    .trace_capture_enabled;
-                if armed {
+                    .capture_consented();
+                if consented {
                     match app.state::<trace_engine::TraceEngine>().start() {
-                        Ok(()) => eprintln!("[trace] auto-arm: Erfassung wieder aktiv (persistierter Consent)."),
+                        Ok(()) => eprintln!("[trace] auto-arm: Erfassung wieder aktiv (erteilte Einwilligung)."),
                         Err(error) => eprintln!("[trace] auto-arm fehlgeschlagen: {error}"),
                     }
                 }
@@ -227,8 +226,9 @@ pub fn run() {
             auth::account_logout,
             auth::bridge_pair,
             trace::trace_status,
-            trace::trace_start,
-            trace::trace_stop,
+            trace::trace_consent_state,
+            trace::trace_consent_grant,
+            trace::trace_consent_revoke,
             trace::trace_recent_events,
             trace::trace_app_usage,
             trace::trace_sync_batch
