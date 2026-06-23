@@ -502,17 +502,17 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
   const [helpError, setHelpError] = useState<string | null>(null);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [helpDraft, setHelpDraft] = useState("");
-  // Forge-Einstellung: „u1 arbeitet"-Overlay anzeigen (default an, persistiert im Config-Dir).
+  // Forge-Einstellung: „u1 arbeitet"-Overlay anzeigen (default AUS, persistiert im Config-Dir).
   const [overlayEnabled, setOverlayEnabled] = useState<boolean | null>(null);
 
   useEffect(() => {
     invoke<boolean>("forge_overlay_enabled")
       .then(setOverlayEnabled)
-      .catch(() => setOverlayEnabled(true));
+      .catch(() => setOverlayEnabled(false));
   }, []);
 
   async function toggleOverlay() {
-    const next = !(overlayEnabled ?? true);
+    const next = !(overlayEnabled ?? false);
     setOverlayEnabled(next); // optimistisch
     try {
       await invoke("set_forge_overlay_enabled", { enabled: next });
@@ -717,20 +717,20 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
           <button
             type="button"
             role="switch"
-            aria-checked={overlayEnabled ?? true}
+            aria-checked={overlayEnabled ?? false}
             onClick={toggleOverlay}
             disabled={overlayEnabled === null}
             style={{
               ...forgeSettingsStyles.toggle,
-              ...((overlayEnabled ?? true) ? forgeSettingsStyles.toggleOn : forgeSettingsStyles.toggleOff),
+              ...((overlayEnabled ?? false) ? forgeSettingsStyles.toggleOn : forgeSettingsStyles.toggleOff),
               opacity: overlayEnabled === null ? 0.5 : 1,
             }}
-            title={(overlayEnabled ?? true) ? "Overlay ist an" : "Overlay ist aus"}
+            title={(overlayEnabled ?? false) ? "Overlay ist an" : "Overlay ist aus"}
           >
             <span
               style={{
                 ...forgeSettingsStyles.knob,
-                ...((overlayEnabled ?? true) ? forgeSettingsStyles.knobOn : forgeSettingsStyles.knobOff),
+                ...((overlayEnabled ?? false) ? forgeSettingsStyles.knobOn : forgeSettingsStyles.knobOff),
               }}
             />
           </button>

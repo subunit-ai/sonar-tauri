@@ -30,9 +30,9 @@ pub struct Config {
     #[serde(default)]
     pub account_is_operator: bool,
     /// Forge-Einstellung: ob das „u1 arbeitet"-Overlay während Remote-Zugriff angezeigt wird.
-    /// Default TRUE (Transparenz beim Fernzugriff). Nutzer-Präferenz → bleibt über Logout erhalten
+    /// Default AUS (TJ-Entscheidung 2026-06-23). Nutzer-Präferenz → bleibt über Logout erhalten
     /// (NICHT in clear_account zurückgesetzt).
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub forge_overlay_enabled: bool,
     /// Trace-Task-Mining: ob die Hintergrund-Erfassung läuft. PERSISTIERT → überlebt
     /// App-Schließen UND Reboot und wird beim Start automatisch wieder gearmt (lib.rs setup).
@@ -43,12 +43,8 @@ pub struct Config {
     pub trace_capture_enabled: bool,
 }
 
-fn default_true() -> bool {
-    true
-}
-
-// Manuelles Default (statt derive) — der derive würde `forge_overlay_enabled` auf `false` setzen;
-// load() nutzt unwrap_or_default() für Neu-Installs → muss TRUE sein (Overlay default an).
+// Manuelles Default — die persistierten Defaults explizit halten (forge_overlay_enabled AUS,
+// trace_capture_enabled AUS; letzteres wird bei Kunden-Pairing automatisch aktiviert, s. auth.rs).
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -59,7 +55,7 @@ impl Default for Config {
             subunit_workspace_id: String::new(),
             account_email: String::new(),
             account_is_operator: false,
-            forge_overlay_enabled: true,
+            forge_overlay_enabled: false,
             trace_capture_enabled: false,
         }
     }

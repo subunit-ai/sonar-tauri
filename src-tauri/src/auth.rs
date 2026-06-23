@@ -57,6 +57,32 @@ pub async fn account_login(app: AppHandle) -> Result<AccountState, String> {
     // Non-fatal: scheitert es (Bridge gerade offline/Zombie), übernimmt der „Koppeln"-Button oder
     // der Auto-Re-Pair beim nächsten Bridge-Status-Poll.
     let _ = adopt_into_bridge(&app).await;
+
+    // KUNDEN-GERÄT → Trace-Hintergrund-Erfassung automatisch aktivieren. Beim Kunden soll Trace
+    // IMMER laufen (managed agent, Consent = Onboarding); ein op=subunit-Team-Gerät bleibt
+    // unangetastet (würde sonst die eigene Team-Aktivität erfassen). `op` ist nur ein UI-Label,
+    // KEINE Sicherheitsgrenze (die echte Access-Policy erzwingt die Bridge serverseitig) — hier
+    // steuert es nur das Default-Verhalten. engine.start() ist idempotent (Worker-Mutex).
+    {
+        let st = app.state::<AppState>();
+        let (logged_in, is_operator) = {
+            let c = st.config.lock();
+            (c.is_logged_in(), c.account_is_operator)
+        };
+        if logged_in && !is_operator {
+            {
+                let mut c = st.config.lock();
+                if !c.trace_capture_enabled {
+                    c.trace_capture_enabled = true;
+                    let _ = c.save();
+                }
+            }
+            if let Err(error) = app.state::<trace_engine::TraceEngine>().start() {
+                eprintln!("[trace] Auto-Enable nach Kunden-Pair fehlgeschlagen: {error}");
+            }
+        }
+    }
+
     Ok(account_state(app))
 }
 
