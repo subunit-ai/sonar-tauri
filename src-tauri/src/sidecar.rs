@@ -243,6 +243,7 @@ impl BridgeSupervisor {
             // Sidecar erbt das Parent-Env (env() ist additiv, kein env_clear) und bekommt
             // zusätzlich den Exec-Approval-Verifikationsschlüssel — sonst "invalid approval signature".
             .env("EXEC_APPROVAL_PUBLIC_KEY", EXEC_APPROVAL_PUBLIC_KEY_PEM)
+            .env("SONAR_VERSION", app.package_info().version.to_string())
             .spawn()
             .map_err(|error| {
                 format!(

@@ -188,6 +188,25 @@ pub fn run() {
                 });
             }
 
+            // TRACE AUTO-ARM: war die Erfassung aktiviert (persistierter Flag), starten wir sie
+            // beim Launch automatisch wieder. Sonar ist ein Hintergrund-Agent — die Aufzeichnung
+            // darf NICHT davon abhängen, dass jemand ein Fenster offen hält oder neu togglet.
+            // Zusammen mit Autostart-beim-Login (s.u.) + Close-to-Tray = lückenlose Hintergrund-
+            // Erfassung, die der Nutzer nicht versehentlich aushebelt.
+            {
+                let armed = app
+                    .state::<config::AppState>()
+                    .config
+                    .lock()
+                    .trace_capture_enabled;
+                if armed {
+                    match app.state::<trace_engine::TraceEngine>().start() {
+                        Ok(()) => eprintln!("[trace] auto-arm: Erfassung wieder aktiv (persistierter Consent)."),
+                        Err(error) => eprintln!("[trace] auto-arm fehlgeschlagen: {error}"),
+                    }
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -2,6 +2,7 @@
 //! (Crate `trace-engine`, eigenes Repo). Erfassung ist opt-in (start/stop), alles lokal.
 
 use crate::bridge_client::BridgeClient;
+use crate::config::AppState;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::State;
 use trace_engine::{ActivityEvent, AppUsage, TraceEngine, TraceStatus};
@@ -12,12 +13,28 @@ pub fn trace_status(engine: State<'_, TraceEngine>) -> Result<TraceStatus, Strin
 }
 
 #[tauri::command]
-pub fn trace_start(engine: State<'_, TraceEngine>) -> Result<(), String> {
+pub fn trace_start(engine: State<'_, TraceEngine>, state: State<'_, AppState>) -> Result<(), String> {
+    // Flag persistieren → der Auto-Arm beim nächsten Start (lib.rs setup) erfasst wieder,
+    // selbst wenn die App geschlossen oder das Gerät neu gestartet wurde.
+    {
+        let mut cfg = state.config.lock();
+        cfg.trace_capture_enabled = true;
+        if let Err(error) = cfg.save() {
+            eprintln!("[trace] Capture-Flag speichern fehlgeschlagen: {error}");
+        }
+    }
     engine.start()
 }
 
 #[tauri::command]
-pub fn trace_stop(engine: State<'_, TraceEngine>) -> Result<(), String> {
+pub fn trace_stop(engine: State<'_, TraceEngine>, state: State<'_, AppState>) -> Result<(), String> {
+    {
+        let mut cfg = state.config.lock();
+        cfg.trace_capture_enabled = false;
+        if let Err(error) = cfg.save() {
+            eprintln!("[trace] Capture-Flag speichern fehlgeschlagen: {error}");
+        }
+    }
     engine.stop()
 }
 

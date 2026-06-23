@@ -34,6 +34,13 @@ pub struct Config {
     /// (NICHT in clear_account zurückgesetzt).
     #[serde(default = "default_true")]
     pub forge_overlay_enabled: bool,
+    /// Trace-Task-Mining: ob die Hintergrund-Erfassung läuft. PERSISTIERT → überlebt
+    /// App-Schließen UND Reboot und wird beim Start automatisch wieder gearmt (lib.rs setup).
+    /// So kann der Nutzer die Aufzeichnung NICHT durch Fenster-Schließen aushebeln — der Sinn
+    /// des Task-Minings bleibt erhalten. Aktivierung = bewusster Schritt (Onboarding/Toggle, =
+    /// Consent); einmal an → bleibt an über Neustarts. Überlebt auch Logout (NICHT in clear_account).
+    #[serde(default)]
+    pub trace_capture_enabled: bool,
 }
 
 fn default_true() -> bool {
@@ -53,6 +60,7 @@ impl Default for Config {
             account_email: String::new(),
             account_is_operator: false,
             forge_overlay_enabled: true,
+            trace_capture_enabled: false,
         }
     }
 }
