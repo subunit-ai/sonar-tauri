@@ -1,7 +1,7 @@
 use crate::{bridge_client::BridgeClient, bridge_client::BridgeHealth, supply_chain};
 use serde::Serialize;
 use std::sync::{Arc, Mutex, MutexGuard};
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
@@ -61,6 +61,8 @@ struct BridgeRuntimeState {
     /// Pausiert NUR für einen Update-Install (kein Respawn), ohne den Supervisor dauerhaft zu
     /// stoppen — schlägt der Install fehl, bringt resume_from_update() die Bridge zurück.
     updating: bool,
+    /// Letzter Auto-Re-Pair-Versuch (Backoff: nicht öfter als alle ~12s, solange ungepairt).
+    last_repair: Option<std::time::Instant>,
 }
 
 /// Killt verwaiste Bridge-Sidecar-Prozesse einer früheren Sonar-Instanz (nach Crash/Update-Restart
@@ -118,6 +120,7 @@ impl BridgeSupervisor {
                     child: None,
                     stopping: false,
                     updating: false,
+                    last_repair: None,
                 }),
             }),
         })
@@ -210,7 +213,17 @@ impl BridgeSupervisor {
         R: Runtime,
     {
         match self.client.health().await {
-            Ok(health) => self.set_online(health),
+            Ok(health) => {
+                let paired = health.paired;
+                self.set_online(health);
+                // AUTO-RE-PAIR: Bridge läuft, ist aber ungepairt (Login war zu früh / Token rotiert /
+                // Sidecar neu gestartet). Statt auf einen manuellen „Koppeln"-Klick zu warten, koppeln
+                // wir hier selbst — alle 5s, UI-unabhängig, mit Backoff. Macht das Pairing automatisch
+                // + selbstheilend; der Button bleibt nur Override.
+                if paired == Some(false) {
+                    self.maybe_auto_repair(app).await;
+                }
+            }
             Err(_) => {
                 self.set_offline();
                 if self.should_spawn() {
@@ -219,6 +232,36 @@ impl BridgeSupervisor {
                     }
                 }
             }
+        }
+    }
+
+    /// Re-Adopt der lokalen Bridge, wenn sie online aber ungepairt ist — nur bei eingeloggtem
+    /// Account (sonst kein Token) und höchstens alle ~12s (Backoff gegen /auth/adopt-Hämmern).
+    async fn maybe_auto_repair<R>(&self, app: &AppHandle<R>)
+    where
+        R: Runtime,
+    {
+        let logged_in = app
+            .try_state::<crate::config::AppState>()
+            .map(|s| s.config.lock().is_logged_in())
+            .unwrap_or(false);
+        if !logged_in {
+            return;
+        }
+        {
+            let mut state = self.lock_state();
+            let due = state
+                .last_repair
+                .map(|t| t.elapsed() >= Duration::from_secs(12))
+                .unwrap_or(true);
+            if !due {
+                return;
+            }
+            state.last_repair = Some(std::time::Instant::now());
+        } // Lock VOR dem await freigeben (std::sync::Mutex nie über await halten).
+        match crate::auth::adopt_into_bridge(app).await {
+            Ok(()) => eprintln!("[bridge] Auto-Re-Pair erfolgreich."),
+            Err(error) => eprintln!("[bridge] Auto-Re-Pair fehlgeschlagen (Retry folgt): {error}"),
         }
     }
 
@@ -243,7 +286,6 @@ impl BridgeSupervisor {
             // Sidecar erbt das Parent-Env (env() ist additiv, kein env_clear) und bekommt
             // zusätzlich den Exec-Approval-Verifikationsschlüssel — sonst "invalid approval signature".
             .env("EXEC_APPROVAL_PUBLIC_KEY", EXEC_APPROVAL_PUBLIC_KEY_PEM)
-            .env("SONAR_VERSION", app.package_info().version.to_string())
             .spawn()
             .map_err(|error| {
                 format!(

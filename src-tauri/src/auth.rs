@@ -76,7 +76,7 @@ pub async fn account_login(app: AppHandle) -> Result<AccountState, String> {
 /// (sonst würde ein laufendes Pairing die Bridge NACH dem Abmelden wieder koppeln). (Codex-Review (a))
 static AUTH_GENERATION: AtomicU64 = AtomicU64::new(0);
 
-async fn adopt_into_bridge(app: &AppHandle) -> Result<(), String> {
+pub(crate) async fn adopt_into_bridge<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let gen_at_start = AUTH_GENERATION.load(Ordering::SeqCst);
     let body = {
         let st = app.state::<AppState>();
