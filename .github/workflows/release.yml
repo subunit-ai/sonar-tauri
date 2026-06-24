@@ -139,7 +139,11 @@ jobs:
           security import /tmp/sonar-sign.p12 -k build.keychain -P "${APPLE_CERTIFICATE_PASSWORD:-}" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k ci build.keychain > /dev/null
           security find-certificate -c "$APPLE_SIGNING_IDENTITY" -p build.keychain > /tmp/sonar-sign.pem
-          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain /tmp/sonar-sign.pem
+          # add-trusted-cert -r trustRoot ist NUR fuer self-signed Certs. Ein Apple-issued Cert (Developer/
+          # Development) ist ueber Apples Chain bereits vertraut -> trustRoot wirft SecTrustSettingsSetTrustSettings
+          # (ungueltige Parameter). Daher non-fatal: bei self-signed greift es, beim Apple-Cert wird es uebersprungen.
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain /tmp/sonar-sign.pem \
+            || echo "add-trusted-cert uebersprungen (Apple-issued Cert ist ueber Apples Chain bereits vertraut)"
           rm /tmp/sonar-sign.p12
           echo "gueltige codesigning-Identities:"
           security find-identity -v -p codesigning build.keychain
