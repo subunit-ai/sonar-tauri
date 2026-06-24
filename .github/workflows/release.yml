@@ -62,8 +62,8 @@ jobs:
           - { os: ubuntu-latest,  args: "--bundles deb", forge_target: x86_64-unknown-linux-gnu }
           # Beide macOS-Builds auf macos-14 (Apple Silicon, plentiful Runner); der x64-Build
           # cross-compiliert nativ (Apple-Toolchain). Vermeidet die knappen/auslaufenden macos-13-Runner.
-          - { os: macos-14,       args: "--target aarch64-apple-darwin --bundles dmg", forge_target: aarch64-apple-darwin }
-          - { os: macos-14,       args: "--target x86_64-apple-darwin --bundles dmg", forge_target: x86_64-apple-darwin }
+          - { os: macos-14,       args: "--target aarch64-apple-darwin --bundles app,dmg", forge_target: aarch64-apple-darwin }
+          - { os: macos-14,       args: "--target x86_64-apple-darwin --bundles app,dmg", forge_target: x86_64-apple-darwin }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
