@@ -59,18 +59,46 @@ pub fn verify_resolved_sidecar() -> Result<PathBuf, String> {
 pub fn verify_sidecar(path: &Path) -> Result<(), String> {
     let actual = sha256_file(path)
         .map_err(|error| format!("failed to hash sidecar at {}: {error}", path.display()))?;
-    let expected = expected_sidecar_sha256()?;
+    let actual_hex = hex_encode(&actual);
 
-    if constant_time_eq_32(&actual, &expected.bytes) {
-        return Ok(());
+    // Win/Linux-Normalpfad: statischer SHA-Pin gegen das Manifest (fail-closed).
+    if let Ok(expected) = expected_sidecar_sha256() {
+        if constant_time_eq_32(&actual, &expected.bytes) {
+            return Ok(());
+        }
     }
 
-    Err(format!(
-        "sidecar integrity check failed for {}: expected SHA-256 {}, got {}",
-        path.display(),
-        expected.hex,
-        hex_encode(&actual)
-    ))
+    // macOS: Tauri signiert den Sidecar beim Bundlen TIEF (ad-hoc bzw. Developer-ID) → der
+    // Binary-SHA ändert sich NACH der (pre-sign berechneten) Manifest-SHA — ein statischer Pin
+    // kann dort NIE matchen. Genau das war die Ursache: der Integritäts-Check schlug fehl, Sonar
+    // verweigerte (fail-closed) den Spawn → Bridge blieb offline / „verbindet…". Die Integrität
+    // garantiert auf macOS die CODE-SIGNATUR: Gatekeeper prüft auch eingebettete Binaries, jede
+    // Manipulation bricht die Signatur. Wir akzeptieren daher iff `codesign --verify` besteht.
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("/usr/bin/codesign")
+            .args(["--verify", "--strict"])
+            .arg(path)
+            .output()
+            .map_err(|error| format!("codesign verify konnte nicht starten: {error}"))?;
+        if out.status.success() {
+            return Ok(());
+        }
+        return Err(format!(
+            "sidecar codesign-Verifikation fehlgeschlagen ({}): {}",
+            actual_hex,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(format!(
+            "sidecar integrity check failed for {}: kein Manifest-Match, SHA-256 {}",
+            path.display(),
+            actual_hex
+        ))
+    }
 }
 
 fn bundled_sidecar_filename() -> String {
