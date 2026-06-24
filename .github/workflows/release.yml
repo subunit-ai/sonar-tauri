@@ -157,8 +157,8 @@ jobs:
           # wird im Keychain-Step oben importiert + getrusted; hier NUR die Identity an tauri-action
           # (NICHT APPLE_CERTIFICATE — das wuerde tauri-action es untrusted in seine Keychain neu importieren).
           # cert-gated: ohne gesetzte Secrets baut macOS weiter ad-hoc (Keychain-Step exitet 0).
-          # Nach Firmengruendung: Developer-ID-Cert + Notarisierung (APPLE_ID/_PASSWORD/_TEAM_ID) ergaenzen.
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # Nach Firmengruendung: Developer-ID-Cert + Notarisierung (APPLE_ID/_PASSWORD/_TEAM_ID) ergaenzen. Ad-hoc-Fallback '-' wenn kein Cert (leerer Secret-String wuerde sonst tauri.conf "-" ueberschreiben -> codesign mit leerer Identity scheitert).
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Sonar ${{ github.ref_name }}"
