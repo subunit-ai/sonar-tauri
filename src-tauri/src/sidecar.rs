@@ -274,6 +274,21 @@ impl BridgeSupervisor {
         }
 
         let sidecar_path = supply_chain::verify_resolved_sidecar()?;
+
+        // macOS: ein ad-hoc-signierter/heruntergeladener Build trägt die Quarantäne
+        // (com.apple.quarantine) auch auf der GEBÜNDELTEN Sidecar-Binary → Gatekeeper killt den
+        // Helper beim Spawn still → die Bridge kommt NIE online (Symptom: „verbindet…" für immer,
+        // kein Auto-Pair, kein Koppeln-Button). Eine App darf ihre EIGENEN gebündelten Binaries
+        // entquarantänisieren — das tun wir hier, VOR dem Spawn. (Stabiles Signing macht das später
+        // unnötig; bis dahin der Selbstheil-Schritt, damit ad-hoc-Builds sich von alleine verbinden.)
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("/usr/bin/xattr")
+                .args(["-dr", "com.apple.quarantine"])
+                .arg(&sidecar_path)
+                .output();
+        }
+
         let (mut rx, child) = app
             .shell()
             .sidecar(supply_chain::SIDECAR_NAME)
