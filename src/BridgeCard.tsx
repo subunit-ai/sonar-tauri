@@ -19,8 +19,9 @@ export function BridgeCard({ status, lastChecked, error }: BridgeCardProps) {
   const stateLabel = online ? "Online" : "Offline";
   const badgeStyle: CSSProperties = {
     ...styles.badge,
-    background: online ? "rgba(6, 182, 212, 0.13)" : "rgba(220, 38, 38, 0.1)",
-    color: online ? "#075d6d" : "#991b1b",
+    background: online ? "rgba(6, 182, 212, 0.13)" : "rgba(220, 38, 38, 0.14)",
+    border: online ? "1px solid rgba(6, 182, 212, 0.45)" : "1px solid rgba(220, 38, 38, 0.4)",
+    color: online ? "#a5f3fc" : "#fca5a5",
   };
   const dotStyle: CSSProperties = {
     ...styles.dot,
@@ -76,12 +77,14 @@ export function BridgeCard({ status, lastChecked, error }: BridgeCardProps) {
 
 const styles: Record<string, CSSProperties> = {
   card: {
-    background: "rgba(255, 255, 255, 0.94)",
-    border: "1px solid rgba(6, 182, 212, 0.28)",
+    background: "rgba(13, 22, 38, 0.72)",
+    backdropFilter: "blur(18px) saturate(1.4)",
+    WebkitBackdropFilter: "blur(18px) saturate(1.4)",
+    border: "1px solid rgba(6, 182, 212, 0.18)",
     borderRadius: 12,
-    boxShadow: "0 24px 70px rgba(0, 0, 0, 0.28)",
+    boxShadow: "0 24px 70px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(190, 215, 245, 0.06)",
     boxSizing: "border-box",
-    color: "#0a1424",
+    color: "#e2e8f0",
     padding: 24,
     width: "100%",
   },
@@ -92,8 +95,8 @@ const styles: Record<string, CSSProperties> = {
     justifyContent: "space-between",
     marginBottom: 20,
   },
-  title: { fontSize: 22, fontWeight: 800, lineHeight: "28px", margin: 0 },
-  subtitle: { color: "#476174", fontSize: 13, lineHeight: "18px", margin: "4px 0 0" },
+  title: { color: "#ecfeff", fontSize: 22, fontWeight: 800, lineHeight: "28px", margin: 0 },
+  subtitle: { color: "#94a3b8", fontSize: 13, lineHeight: "18px", margin: "4px 0 0" },
   badge: {
     alignItems: "center",
     borderRadius: 999,
@@ -107,26 +110,26 @@ const styles: Record<string, CSSProperties> = {
   },
   dot: { borderRadius: "50%", height: 9, width: 9 },
   detailGrid: {
-    borderTop: "1px solid rgba(10, 20, 36, 0.11)",
+    borderTop: "1px solid rgba(148, 163, 184, 0.12)",
     display: "grid",
     gap: 12,
     paddingTop: 18,
   },
   detailRow: { display: "flex", gap: 16, justifyContent: "space-between" },
-  detailLabel: { color: "#476174", fontSize: 14, lineHeight: "20px" },
+  detailLabel: { color: "#94a3b8", fontSize: 14, lineHeight: "20px" },
   detailValue: {
-    color: "#0a1424",
+    color: "#e2e8f0",
     fontSize: 14,
     fontWeight: 700,
     lineHeight: "20px",
     textAlign: "right",
   },
-  footnote: { color: "#476174", fontSize: 12, lineHeight: "17px", margin: "16px 0 0" },
+  footnote: { color: "#64748b", fontSize: 12, lineHeight: "17px", margin: "16px 0 0" },
   error: {
-    background: "rgba(220, 38, 38, 0.08)",
-    border: "1px solid rgba(220, 38, 38, 0.2)",
+    background: "rgba(220, 38, 38, 0.12)",
+    border: "1px solid rgba(220, 38, 38, 0.3)",
     borderRadius: 8,
-    color: "#991b1b",
+    color: "#fca5a5",
     fontSize: 13,
     lineHeight: "18px",
     marginTop: 14,

@@ -13,7 +13,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { BridgeCard, type BridgeStatus } from "./BridgeCard";
 import { ForgeAccessCard, type ConsentState } from "./ForgeAccessCard";
-import { PermissionOnboarding } from "./PermissionOnboarding";
 import { CrystalOverlay } from "./CrystalOverlay";
 import { ConsentPrompt, type ConsentRequest } from "./ConsentPrompt";
 import { SonarLogo } from "./SonarLogo";
@@ -422,7 +421,12 @@ function Shell({
           </div>
         ) : null}
         {space === "home" ? (
-          <HomeSpace account={account} status={status} lastChecked={lastChecked} />
+          <HomeSpace
+            account={account}
+            status={status}
+            lastChecked={lastChecked}
+            onOpenSpace={setSpace}
+          />
         ) : null}
         {space === "forge" ? <ForgeSpace bridgeOnline={bridgeOnline} /> : null}
         {space === "trace" ? <TraceSpace /> : null}
@@ -451,10 +455,12 @@ const HomeSpace = memo(function HomeSpace({
   account,
   status,
   lastChecked,
+  onOpenSpace,
 }: {
   account: AccountState;
   status: BridgeStatus | null;
   lastChecked: Date | null;
+  onOpenSpace: (space: SpaceId) => void;
 }) {
   return (
     <SpaceShell>
@@ -466,27 +472,59 @@ const HomeSpace = memo(function HomeSpace({
         Forge und Trace laufen darauf.
       </p>
 
-      <PermissionOnboarding />
-
       <BridgeCard status={status} lastChecked={lastChecked} />
 
       <div style={homeStyles.cards}>
-        <div style={homeStyles.card}>
-          <div style={homeStyles.cardHead}>Forge</div>
-          <div style={homeStyles.cardValue}>Remote-Support</div>
-          <div style={homeStyles.cardSub}>
-            {account.is_operator ? "voller Zugriff (intern)" : "Freigabe nötig (Kunde)"}
-          </div>
-        </div>
-        <div style={homeStyles.card}>
-          <div style={homeStyles.cardHead}>Trace</div>
-          <div style={homeStyles.cardValue}>Task-Mining</div>
-          <div style={homeStyles.cardSub}>bald verfügbar</div>
-        </div>
+        <HomeNavCard
+          head="Forge"
+          value="Remote-Support"
+          sub={account.is_operator ? "voller Zugriff (intern)" : "Freigabe nötig (Kunde)"}
+          onClick={() => onOpenSpace("forge")}
+        />
+        <HomeNavCard
+          head="Trace"
+          value="Task-Mining"
+          sub="Task-Mining · aktiv"
+          onClick={() => onOpenSpace("trace")}
+        />
       </div>
     </SpaceShell>
   );
 });
+
+/** Klickbare Home-Kachel im Liquid-Glass-Look — öffnet den jeweiligen Space.
+ *  Hover hebt die Kachel leicht an und verstärkt den cyan Rand (rein lokaler State). */
+function HomeNavCard({
+  head,
+  value,
+  sub,
+  onClick,
+}: {
+  head: string;
+  value: string;
+  sub: string;
+  onClick: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{ ...homeStyles.card, ...(hover ? homeStyles.cardHover : null) }}
+    >
+      <div style={homeStyles.cardHeadRow}>
+        <span style={homeStyles.cardHead}>{head}</span>
+        <span style={{ ...homeStyles.cardChevron, ...(hover ? homeStyles.cardChevronHover : null) }}>
+          →
+        </span>
+      </div>
+      <div style={homeStyles.cardValue}>{value}</div>
+      <div style={homeStyles.cardSub}>{sub}</div>
+    </button>
+  );
+}
 
 /** Forge-Space = die ausführende Instanz AUF der Bridge: Remote-Zugriff, Consent, Stop, Hilfe.
  *  Zeigt bewusst KEINEN Bridge-Verbindungsstatus (das ist Fundament → Home/Sidebar). */
@@ -962,7 +1000,7 @@ const forgeSettingsStyles: Record<string, CSSProperties> = {
   toggleOn: { background: "#06b6d4" },
   toggleOff: { background: "rgba(148, 163, 184, 0.4)" },
   knob: {
-    background: "#ffffff",
+    background: "#cfe0f2",
     borderRadius: "50%",
     height: 20,
     position: "absolute",
@@ -1039,12 +1077,17 @@ const shellStyles: Record<string, CSSProperties> = {
   brandWord: { fontSize: 17, fontWeight: 800, letterSpacing: 3 },
   bridgeIndicator: {
     alignItems: "center",
+    alignSelf: "flex-start",
+    background: "rgba(13, 22, 38, 0.55)",
+    border: "1px solid rgba(6, 182, 212, 0.16)",
+    borderRadius: 999,
     color: "#94a3b8",
     display: "flex",
     fontSize: 11,
     fontWeight: 600,
     gap: 7,
-    padding: "0 6px 4px",
+    margin: "0 6px",
+    padding: "5px 11px",
   },
   bridgeDot: { borderRadius: "50%", height: 8, width: 8 },
   navList: { display: "flex", flexDirection: "column", flex: 1, gap: 6 },
@@ -1152,12 +1195,28 @@ const shellStyles: Record<string, CSSProperties> = {
 const homeStyles: Record<string, CSSProperties> = {
   cards: { display: "grid", gap: 14, gridTemplateColumns: "repeat(2, 1fr)" },
   card: {
-    background: "rgba(15, 26, 44, 0.6)",
+    background: "rgba(13, 22, 38, 0.72)",
+    backdropFilter: "blur(18px) saturate(1.4)",
+    WebkitBackdropFilter: "blur(18px) saturate(1.4)",
     border: "1px solid rgba(6, 182, 212, 0.18)",
     borderRadius: 12,
+    boxShadow: "0 18px 50px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(190, 215, 245, 0.06)",
     boxSizing: "border-box",
+    color: INK,
+    cursor: "pointer",
+    display: "block",
+    fontFamily: "inherit",
     padding: "16px 16px 18px",
+    textAlign: "left",
+    transition: "transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease",
+    width: "100%",
   },
+  cardHover: {
+    borderColor: "rgba(6, 182, 212, 0.5)",
+    boxShadow: "0 26px 60px rgba(0, 0, 0, 0.42), 0 0 30px rgba(6, 182, 212, 0.12), inset 0 1px 0 rgba(190, 215, 245, 0.08)",
+    transform: "translateY(-2px)",
+  },
+  cardHeadRow: { alignItems: "center", display: "flex", justifyContent: "space-between" },
   cardHead: {
     color: "#64748b",
     fontSize: 11,
@@ -1165,6 +1224,13 @@ const homeStyles: Record<string, CSSProperties> = {
     letterSpacing: 1,
     textTransform: "uppercase",
   },
+  cardChevron: {
+    color: "#475569",
+    fontSize: 15,
+    fontWeight: 700,
+    transition: "color 0.18s ease, transform 0.18s ease",
+  },
+  cardChevronHover: { color: "#a5f3fc", transform: "translateX(2px)" },
   cardValue: { color: INK, fontSize: 18, fontWeight: 800, marginTop: 8 },
   cardSub: { color: "#94a3b8", fontSize: 12, marginTop: 4 },
 };
