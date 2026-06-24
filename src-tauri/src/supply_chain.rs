@@ -110,7 +110,6 @@ fn dev_sidecar_filename() -> String {
 }
 
 struct ExpectedSha256 {
-    hex: &'static str,
     bytes: [u8; 32],
 }
 
@@ -129,7 +128,6 @@ fn expected_sidecar_sha256() -> Result<ExpectedSha256, String> {
 
         if filename == artifact {
             return Ok(ExpectedSha256 {
-                hex,
                 bytes: hex_decode_32(hex)?,
             });
         }
