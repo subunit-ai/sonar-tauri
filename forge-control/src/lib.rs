@@ -217,7 +217,30 @@ fn position_cursor(_enigo: &mut Enigo, x: i32, y: i32) -> Result<(), String> {
     unsafe { SetCursorPos(x, y) }.map_err(|e| format!("SetCursorPos failed: {e}"))
 }
 
-#[cfg(not(windows))]
+/// Primärer-Monitor-Scale (physische Pixel / logische Punkte). 1.0 wenn unbekannt.
+#[cfg(target_os = "macos")]
+fn primary_scale() -> f32 {
+    xcap::Monitor::all()
+        .ok()
+        .and_then(|ms| ms.into_iter().next())
+        .and_then(|m| m.scale_factor().ok())
+        .filter(|s| *s > 0.0)
+        .unwrap_or(1.0)
+}
+
+/// **macOS:** xcap captured physische Retina-Pixel, aber macOS-CoreGraphics-Input (enigo)
+/// erwartet logische Punkte → physisch/scale, sonst landet der Klick um den Scale-Faktor
+/// daneben (auf Retina ~2×). Auf Linux/X11 stimmen physisch + logisch überein → keine Division.
+#[cfg(target_os = "macos")]
+fn position_cursor(enigo: &mut Enigo, x: i32, y: i32) -> Result<(), String> {
+    use enigo::Coordinate;
+    let scale = primary_scale();
+    let lx = (x as f32 / scale).round() as i32;
+    let ly = (y as f32 / scale).round() as i32;
+    enigo.move_mouse(lx, ly, Coordinate::Abs).map_err(|e| e.to_string())
+}
+
+#[cfg(all(not(windows), not(target_os = "macos")))]
 fn position_cursor(enigo: &mut Enigo, x: i32, y: i32) -> Result<(), String> {
     use enigo::Coordinate;
     enigo.move_mouse(x, y, Coordinate::Abs).map_err(|e| e.to_string())
