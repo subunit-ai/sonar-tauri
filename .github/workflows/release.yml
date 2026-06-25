@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/trace-tauri
-          ref: a07e1a38468ad01e58deb546b09c923b211cd713 # v0.1.7 (schema_v3 UiPath-Selector/Event-Vertrag: UiSelector + closed-enum field_class/app_category/copy_shape + dwell/gap/click; additiv, Producer=Phase2-gated)
+          ref: afc4fb9a1ea3d2bb460d076bddb498344fffb305 # v0.1.8 (schema_v3 UiPath-Vertrag + Windows-Compile-Fix; additiv, Producer=Phase2-gated)
           ssh-key: ${{ secrets.TRACE_DEPLOY_KEY }}
           path: trace-co
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
