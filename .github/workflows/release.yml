@@ -21,14 +21,14 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/bridge-tauri
-          ref: ae3cebb4b8304dbf0741d457dae924b3bf685ba9 # v0.4.7 (schema_v2 device_label/last_user passthrough · Pairing-Stabilität: rotierten refresh_token persistieren → kein Family-Kill/Re-Login mehr; fail-closed /me + Reconnect-Härtung; inkl. v0.4.5 Forge-L3-Teardown)
+          ref: a388694af0bc6a20117f557f659c7a323254413c # v0.4.8 (Automation-Runtime 2.2: Scheduler/Executor/CRUD-Routen + Win-read-only-exec-Whitelist)
           ssh-key: ${{ secrets.BRIDGE_DEPLOY_KEY }}
           path: bridge-src
       - name: Checkout trace-engine source (pinned, read-only deploy key)
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/trace-tauri
-          ref: 755ebaae0f433e4a273db96e4a32593ab8797cef # v0.1.6 (schema_v2 device_label Hostname · UIA-Provider Inkr. 1+2a+3+4 + COM-Init-Hygiene + Browser-URL-Throttle)
+          ref: a07e1a38468ad01e58deb546b09c923b211cd713 # v0.1.7 (schema_v3 UiPath-Selector/Event-Vertrag: UiSelector + closed-enum field_class/app_category/copy_shape + dwell/gap/click; additiv, Producer=Phase2-gated)
           ssh-key: ${{ secrets.TRACE_DEPLOY_KEY }}
           path: trace-co
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
