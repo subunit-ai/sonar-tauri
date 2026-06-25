@@ -318,6 +318,15 @@ function Shell({
     setPairing(true);
     try {
       await invoke("bridge_pair");
+      // Adopt erfolgreich -> SOFORT nachpollen, bis die Bridge die WS-Verbindung meldet (paired),
+      // statt auf den naechsten Hintergrund-Poll zu warten (sonst fuehlte sich der Klick an wie
+      // "nichts passiert"). (TJ 2026-06-25)
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const next = await invoke<BridgeStatus>("bridge_status");
+        setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+        if (next.paired) break;
+        await new Promise((resolve) => setTimeout(resolve, 750));
+      }
     } catch (caught) {
       console.error("bridge_pair:", caught);
       window.alert("Koppeln fehlgeschlagen — bitte sicherstellen, dass du angemeldet bist, und erneut versuchen.");
@@ -987,30 +996,44 @@ const forgeSettingsStyles: Record<string, CSSProperties> = {
   title: { color: INK, fontSize: 14, fontWeight: 700 },
   desc: { color: "#94a3b8", fontSize: 12, lineHeight: "17px", maxWidth: 460 },
   toggle: {
+    // appearance-Reset ist PFLICHT: ohne ihn legt WKWebView native Button-Chrome drueber
+    // (grau, eigene Geometrie) -> der absolut positionierte Knob sitzt falsch + spillt rechts
+    // raus. (TJ 2026-06-25 "faellt raus, grau, komplett kacke") overflow:hidden klemmt zusaetzlich.
+    appearance: "none",
+    WebkitAppearance: "none",
     border: "none",
+    outline: "none",
     borderRadius: 999,
+    boxSizing: "border-box",
     cursor: "pointer",
+    display: "inline-block",
     flexShrink: 0,
     height: 26,
+    width: 46,
+    margin: 0,
     padding: 0,
     position: "relative",
+    overflow: "hidden",
     transition: "background 0.18s ease",
-    width: 46,
   },
   toggleOn: { background: "#06b6d4" },
-  toggleOff: { background: "rgba(148, 163, 184, 0.4)" },
+  toggleOff: { background: "rgba(148, 163, 184, 0.45)" },
   knob: {
-    background: "#cfe0f2",
+    background: "#ffffff",
     borderRadius: "50%",
     height: 20,
+    width: 20,
     position: "absolute",
     top: 3,
+    left: 3,
+    margin: 0,
+    pointerEvents: "none",
     transition: "transform 0.18s ease",
-    width: 20,
     boxShadow: "0 1px 3px rgba(0,0,0,0.4)",
   },
-  knobOn: { transform: "translateX(23px)" },
-  knobOff: { transform: "translateX(3px)" },
+  // Knob-Basis left:3 -> off bleibt links (3px Rand), on = +20 -> 23px (rechts 3px Rand, 43<=43 passt).
+  knobOff: { transform: "translateX(0px)" },
+  knobOn: { transform: "translateX(20px)" },
 };
 
 const updateStyles: Record<string, CSSProperties> = {
