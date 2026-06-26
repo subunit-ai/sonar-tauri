@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/trace-tauri
-          ref: afc4fb9a1ea3d2bb460d076bddb498344fffb305 # v0.1.8 (schema_v3 UiPath-Vertrag + Windows-Compile-Fix; additiv, Producer=Phase2-gated)
+          ref: 6dc07cec0f129d297bc42f7fa3e330d5f74940c9 # v0.1.9 (Deep-Capture-Producer schema_v3 real: Selektor/Klick/Timing/Form + §10-Privacy-Haertung; Producer LIVE, Keyboard-Hook/Paste weiter ungebaut)
           ssh-key: ${{ secrets.TRACE_DEPLOY_KEY }}
           path: trace-co
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
