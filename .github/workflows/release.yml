@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/trace-tauri
-          ref: 43d5439affe62228858b7d9d2f30b87d06ef2393 # v0.1.12 (macOS volle Tiefe KOMPLETT: Fokus+Klicks(CGEventTap)+Tippen+Clipboard(NSPasteboard)+Selektoren+Koordinaten, runtime-verifiziert)
+          ref: a03cd0ef5d28a78dbc137c945bccb98824e17a99 # v0.1.13 (macOS volle Tiefe KOMPLETT + §10-gehaertet: Fokus+Klicks+Tippen+Clipboard; Klick-Tap-Lifecycle=Consent (Drop->CFRunLoopStop) + Panik-FFI-Guard)
           ssh-key: ${{ secrets.TRACE_DEPLOY_KEY }}
           path: trace-co
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
