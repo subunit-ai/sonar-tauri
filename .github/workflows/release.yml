@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: subunit-ai/trace-tauri
-          ref: 75e3b83be79916251f91179c0618ec79dd34d902 # v0.1.10 (macOS-AX Deep-Capture-Provider: Windows-Paritaet + runtime-verifiziert; Selektor/Klick/Form auch auf Mac, §10-gehaertet)
+          ref: 192cd68519840e1f2d6dbe0b1c2ab9d2d5c907a5 # v0.1.11 (macOS Klick-Erfassung via CGEventTap: jeder Klick -> Element+Selektor+Koordinaten, auch fokuslose Buttons; + Fokus/Selektor/Klick-Koord/Tippen, runtime-verifiziert)
           ssh-key: ${{ secrets.TRACE_DEPLOY_KEY }}
           path: trace-co
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
