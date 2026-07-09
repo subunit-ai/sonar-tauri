@@ -218,6 +218,8 @@ pub fn run() {
             consent::consent_revoke,
             consent::consent_resume,
             consent::consent_state,
+            consent::access_consent_state,
+            consent::access_consent_set,
             consent::overlay_dismiss,
             consent::forge_overlay_enabled,
             consent::set_forge_overlay_enabled,
