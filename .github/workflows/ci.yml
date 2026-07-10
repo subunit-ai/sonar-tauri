@@ -32,10 +32,11 @@ jobs:
         run: |
           bun install --frozen-lockfile
           bun run build
-      - name: Stub-Sidecar (CI baut keinen echten — nur externalBin-Existenz-Check für cargo)
+      - name: Stub-Sidecars (CI baut keine echten — nur externalBin-Existenz-Check für cargo; Liste = tauri.conf.json externalBin)
         run: |
           mkdir -p src-tauri/binaries
           touch src-tauri/binaries/subunit-bridge-x86_64-unknown-linux-gnu
+          touch src-tauri/binaries/forge-control-x86_64-unknown-linux-gnu
       - name: cargo check + clippy
         working-directory: src-tauri
         run: |
