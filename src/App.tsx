@@ -11,6 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
+import { AccessConsentGate, type AccessConsentState } from "./AccessConsentGate";
 import { BridgeCard, type BridgeStatus } from "./BridgeCard";
 import { ForgeAccessCard, type ConsentState } from "./ForgeAccessCard";
 import { CrystalOverlay } from "./CrystalOverlay";
@@ -96,10 +97,14 @@ function App() {
   return <MainApp />;
 }
 
-/** Login-Gate: erst Account prüfen, dann Shell. */
+/** Onboarding-Reihenfolge: 1) Zugriffs-Consent (einmalig, GANZ am Anfang — Task #12),
+ *  2) Login-Gate, 3) Shell. Der Consent-Record ist gespeichert, BEVOR irgendein weiterer
+ *  Schritt läuft; nach Logout (Reset auf "unset") kommt der Schritt für den nächsten
+ *  Account erneut. */
 function MainApp() {
   const [account, setAccount] = useState<AccountState | null>(null);
   const [ready, setReady] = useState(false);
+  const [accessConsent, setAccessConsent] = useState<AccessConsentState | null>(null);
 
   const refreshAccount = useCallback(async () => {
     try {
@@ -116,18 +121,36 @@ function MainApp() {
     }
   }, []);
 
+  const refreshAccessConsent = useCallback(async () => {
+    try {
+      const next = await invoke<AccessConsentState>("access_consent_state");
+      setAccessConsent((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+    } catch {
+      /* Command nicht bereit — Poll unten versucht es erneut. */
+    }
+  }, []);
+
   useEffect(() => {
     refreshAccount();
-    const id = window.setInterval(refreshAccount, ACCOUNT_POLL_INTERVAL_MS);
+    refreshAccessConsent();
+    const id = window.setInterval(() => {
+      refreshAccount();
+      // Logout setzt den Consent backendseitig auf "unset" zurück → Poll hält das Gate aktuell.
+      refreshAccessConsent();
+    }, ACCOUNT_POLL_INTERVAL_MS);
     return () => window.clearInterval(id);
-  }, [refreshAccount]);
+  }, [refreshAccount, refreshAccessConsent]);
 
-  if (!ready) {
+  if (!ready || accessConsent === null) {
     return (
       <main style={shellStyles.splash}>
         <SonarLogo size={64} pulsing />
       </main>
     );
+  }
+
+  if (!accessConsent.decided) {
+    return <AccessConsentGate onDecided={setAccessConsent} />;
   }
 
   if (!account?.logged_in) {
@@ -554,11 +577,18 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
   const [helpDraft, setHelpDraft] = useState("");
   // Forge-Einstellung: „u1 arbeitet"-Overlay anzeigen (default AUS, persistiert im Config-Dir).
   const [overlayEnabled, setOverlayEnabled] = useState<boolean | null>(null);
+  // Zugriffs-Einwilligung (Onboarding-Consent): "full" = Vollzugriff ab Werk, "confirm" =
+  // Nachfrage pro Aktion. Hier in den Einstellungen jederzeit widerrufbar (Consent-Zusage).
+  const [accessConsent, setAccessConsent] = useState<AccessConsentState | null>(null);
+  const [accessConsentPending, setAccessConsentPending] = useState(false);
 
   useEffect(() => {
     invoke<boolean>("forge_overlay_enabled")
       .then(setOverlayEnabled)
       .catch(() => setOverlayEnabled(false));
+    invoke<AccessConsentState>("access_consent_state")
+      .then(setAccessConsent)
+      .catch(() => setAccessConsent(null));
   }, []);
 
   async function toggleOverlay() {
@@ -569,6 +599,23 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
     } catch (caught) {
       setOverlayEnabled(!next); // bei Fehler zurückdrehen
       console.error("set_forge_overlay_enabled:", caught);
+    }
+  }
+
+  async function toggleFullAccess() {
+    if (!accessConsent || accessConsentPending) return;
+    const nextMode = accessConsent.consent === "full" ? "confirm" : "full";
+    setAccessConsentPending(true);
+    try {
+      const next = await invoke<AccessConsentState>("access_consent_set", {
+        mode: nextMode,
+        source: "settings",
+      });
+      setAccessConsent(next);
+    } catch (caught) {
+      console.error("access_consent_set:", caught);
+    } finally {
+      setAccessConsentPending(false);
     }
   }
 
@@ -756,6 +803,44 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
         onHelpRequest={openHelp}
       />
       <div style={forgeSettingsStyles.card}>
+        <div style={forgeSettingsStyles.row}>
+          <div style={forgeSettingsStyles.text}>
+            <div style={forgeSettingsStyles.title}>Vollzugriff</div>
+            <div style={forgeSettingsStyles.desc}>
+              Dein Subunit-Operator darf auf diesem Gerät ohne erneute Nachfrage pro Aktion
+              arbeiten. Jede Aktion wird protokolliert. Beim Ausschalten werden laufende
+              Aktionen beendet — danach braucht jede Aktion deine Bestätigung.
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={accessConsent?.consent === "full"}
+            onClick={toggleFullAccess}
+            disabled={accessConsent === null || accessConsentPending}
+            style={{
+              ...forgeSettingsStyles.toggle,
+              ...(accessConsent?.consent === "full"
+                ? forgeSettingsStyles.toggleOn
+                : forgeSettingsStyles.toggleOff),
+              opacity: accessConsent === null || accessConsentPending ? 0.5 : 1,
+            }}
+            title={
+              accessConsent?.consent === "full"
+                ? "Vollzugriff ist aktiv"
+                : "Jede Aktion braucht deine Bestätigung"
+            }
+          >
+            <span
+              style={{
+                ...forgeSettingsStyles.knob,
+                ...(accessConsent?.consent === "full"
+                  ? forgeSettingsStyles.knobOn
+                  : forgeSettingsStyles.knobOff),
+              }}
+            />
+          </button>
+        </div>
         <div style={forgeSettingsStyles.row}>
           <div style={forgeSettingsStyles.text}>
             <div style={forgeSettingsStyles.title}>„u1 arbeitet"-Overlay</div>
@@ -989,6 +1074,9 @@ const forgeSettingsStyles: Record<string, CSSProperties> = {
     border: "1px solid rgba(6, 182, 212, 0.18)",
     borderRadius: 12,
     boxSizing: "border-box",
+    display: "flex",
+    flexDirection: "column",
+    gap: 16,
     padding: "16px 18px",
   },
   row: { alignItems: "center", display: "flex", gap: 16, justifyContent: "space-between" },

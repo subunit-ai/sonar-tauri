@@ -47,6 +47,20 @@ pub struct Config {
     /// Unix-Sekunden der Einwilligung (Audit-Provenance; wird als consent_at zu Nexus propagiert). 0 = keine.
     #[serde(default)]
     pub trace_consent_at: f64,
+    /// Zugriffs-Einwilligung aus dem Onboarding (Task #12): "unset" | "full" | "confirm".
+    /// - "unset" → der Consent-Schritt wurde noch nicht durchlaufen → Onboarding zeigt ihn als ERSTES.
+    /// - "full" → Kunde hat Vollzugriff aktiviert → Bridge läuft im access_mode "full" (ab Werk, ohne
+    ///   Nachfrage pro Aktion). Diese Wahl ist die SSOT: der Reassert-Loop (consent.rs) stellt sie
+    ///   nach jedem Bridge-Neustart wieder her (die Bridge bootet per F7 IMMER restricted).
+    /// - "confirm" → jede Remote-Aktion braucht eine explizite Freigabe (bisheriges Verhalten).
+    ///
+    /// Beim Logout auf "unset" zurückgesetzt (clear_account): ein neuer Account/Owner muss frisch
+    /// einwilligen — Vollzugriff wird nie still über einen Kontowechsel hinweg vererbt.
+    #[serde(default = "consent_unset")]
+    pub access_consent: String,
+    /// Unix-Sekunden der Zugriffs-Einwilligung (Audit-Provenance). 0 = keine.
+    #[serde(default)]
+    pub access_consent_at: f64,
 }
 
 fn consent_unset() -> String {
@@ -68,6 +82,8 @@ impl Default for Config {
             forge_overlay_enabled: false,
             trace_consent: "unset".to_string(),
             trace_consent_at: 0.0,
+            access_consent: "unset".to_string(),
+            access_consent_at: 0.0,
         }
     }
 }
@@ -120,6 +136,24 @@ impl Config {
         // hinweg weiterlaufen lassen (Security-Review H1). Engine wird in account_logout gestoppt.
         self.trace_consent = "revoked".to_string();
         self.trace_consent_at = 0.0;
+        // Zugriffs-Einwilligung auf "unset" zurücksetzen: ein neuer Account durchläuft den
+        // Consent-Schritt frisch, Vollzugriff wird nie über einen Kontowechsel vererbt.
+        self.access_consent = "unset".to_string();
+        self.access_consent_at = 0.0;
+    }
+
+    /// Hat der Kunde den einmaligen Zugriffs-Consent bereits getroffen? Steuert das Onboarding-Gate.
+    pub fn access_consent_decided(&self) -> bool {
+        self.access_consent == "full" || self.access_consent == "confirm"
+    }
+
+    /// Auf welchen Bridge-`access_mode` bildet die aktuelle Einwilligung ab? None = noch nicht entschieden.
+    pub fn access_mode_for_consent(&self) -> Option<&'static str> {
+        match self.access_consent.as_str() {
+            "full" => Some("full"),
+            "confirm" => Some("restricted"),
+            _ => None,
+        }
     }
 }
 

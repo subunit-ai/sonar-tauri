@@ -57,6 +57,12 @@ pub struct ConsentController {
     last_signed_operator_id: Arc<Mutex<Option<String>>>,
     overlay_active: Arc<Mutex<bool>>,
     overlay_dismissed: Arc<Mutex<bool>>,
+    // Ob der konsentierte access_mode für die AKTUELLE Bridge-Session schon (wieder) gesetzt wurde.
+    // Die Bridge bootet per F7 IMMER restricted → ein konsentierter "full" muss nach jedem
+    // Bridge-Neustart einmal neu scharf geschaltet werden, sonst fällt "Vollzugriff ab Werk" nach
+    // jedem Update/Reboot still auf restricted zurück. Zurückgesetzt, sobald die Bridge nicht
+    // erreichbar ist (Neustart) → beim nächsten Online neu asserten. (Task #12)
+    access_mode_synced: Arc<Mutex<bool>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -78,6 +84,7 @@ impl ConsentController {
             last_signed_operator_id: Arc::new(Mutex::new(None)),
             overlay_active: Arc::new(Mutex::new(false)),
             overlay_dismissed: Arc::new(Mutex::new(false)),
+            access_mode_synced: Arc::new(Mutex::new(false)),
         })
     }
 
@@ -140,12 +147,70 @@ impl ConsentController {
         self.client.get_authed_json("/consent/pending").await
     }
 
+    /// Access-Mode an der Bridge setzen. `source` landet im Bridge-Audit-Log
+    /// (consent-audit.jsonl): "onboarding" | "settings" = bewusste Nutzer-Entscheidung,
+    /// "reassert" = stilles Wiederherstellen der konsentierten Basis nach Bridge-Neustart.
+    pub async fn set_access_mode(
+        &self,
+        mode: &str,
+        source: &str,
+        app_version: &str,
+    ) -> Result<(), BridgeClientError> {
+        self.client
+            .post_authed_json(
+                "/auth/access",
+                &serde_json::json!({
+                    "access_mode": mode,
+                    "source": source,
+                    "app_version": app_version,
+                }),
+            )
+            .await
+    }
+
+    pub fn mark_access_mode_synced(&self, synced: bool) {
+        *self.lock_access_mode_synced() = synced;
+    }
+
+    /// Konsentierten Access-Mode nach einem Bridge-(Neu-)Start wieder scharf schalten.
+    /// Die Bridge bootet fail-safe IMMER restricted (F7) — ohne dieses Reassert würde ein im
+    /// Onboarding konsentierter Vollzugriff nach jedem Update/Reboot still zu "Nachfrage pro
+    /// Aktion" degradieren. Läuft nur, wenn (a) die Bridge gerade erreichbar war und (b) für
+    /// diese Bridge-Session noch nicht gesynct wurde. Keine Einwilligung → no-op.
+    async fn reassert_access_mode<R>(&self, app: &AppHandle<R>)
+    where
+        R: Runtime,
+    {
+        if *self.lock_access_mode_synced() {
+            return;
+        }
+        let Some(state) = app.try_state::<crate::config::AppState>() else {
+            return;
+        };
+        let mode = {
+            let config = state.config.lock();
+            config.access_mode_for_consent()
+        };
+        let Some(mode) = mode else {
+            // Noch keine Entscheidung (Onboarding offen) → nichts wiederherzustellen.
+            return;
+        };
+        let app_version = app.package_info().version.to_string();
+        match self.set_access_mode(mode, "reassert", &app_version).await {
+            Ok(()) => *self.lock_access_mode_synced() = true,
+            Err(error) => eprintln!("failed to reassert access mode: {error}"),
+        }
+    }
+
     async fn poll_once<R>(&self, app: &AppHandle<R>)
     where
         R: Runtime,
     {
         match self.state().await {
             Ok(state) => {
+                // Bridge erreichbar → konsentierten Access-Mode ggf. wiederherstellen (einmal
+                // pro Bridge-Session), BEVOR der Status weiterverarbeitet wird.
+                self.reassert_access_mode(app).await;
                 set_tray_tooltip(app, Some(state.remote_access.as_str()));
                 self.reflect_overlay(app, &state);
                 if let Err(error) = app.emit(CONSENT_STATE_EVENT, state) {
@@ -153,6 +218,8 @@ impl ConsentController {
                 }
             }
             Err(error) => {
+                // Bridge weg (Neustart/Update/Crash) → beim nächsten Online neu asserten.
+                *self.lock_access_mode_synced() = false;
                 set_tray_tooltip(app, None);
                 self.force_hide_overlay(app);
                 eprintln!("failed to poll consent state: {error}");
@@ -213,6 +280,12 @@ impl ConsentController {
 
     fn lock_overlay_active(&self) -> MutexGuard<'_, bool> {
         self.overlay_active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn lock_access_mode_synced(&self) -> MutexGuard<'_, bool> {
+        self.access_mode_synced
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -373,6 +446,86 @@ pub async fn consent_state(
     controller: tauri::State<'_, ConsentController>,
 ) -> Result<ConsentState, String> {
     controller.state().await.map_err(error_to_string)
+}
+
+/// Zugriffs-Einwilligung (Task #12 „Vollzugriff ab Werk"): Zustand für UI-Gate + Settings.
+#[derive(Clone, Debug, Serialize)]
+pub struct AccessConsentState {
+    /// "unset" | "full" | "confirm"
+    pub consent: String,
+    /// true sobald der einmalige Consent-Schritt durchlaufen wurde (Onboarding-Gate).
+    pub decided: bool,
+    /// Unix-Sekunden der Entscheidung (0 = keine).
+    pub decided_at: f64,
+}
+
+fn read_access_consent_state(state: &tauri::State<'_, crate::config::AppState>) -> AccessConsentState {
+    let config = state.config.lock();
+    AccessConsentState {
+        consent: config.access_consent.clone(),
+        decided: config.access_consent_decided(),
+        decided_at: config.access_consent_at,
+    }
+}
+
+#[tauri::command]
+pub fn access_consent_state(
+    state: tauri::State<'_, crate::config::AppState>,
+) -> AccessConsentState {
+    read_access_consent_state(&state)
+}
+
+/// Einmaliger Consent-Schritt (Onboarding) bzw. Widerruf/Änderung (Settings).
+/// `mode`: "full" (Vollzugriff ab Werk) | "confirm" (Nachfrage pro Aktion).
+/// `source`: "onboarding" | "settings" — landet im Bridge-Audit-Log.
+///
+/// Reihenfolge ist bewusst: ZUERST lokal persistieren (der Consent-Record existiert damit VOR
+/// allen weiteren Onboarding-Schritten und übersteht App-Neustarts), DANN an die Bridge melden
+/// (Audit-Record mit Zeitstempel + Gerät + App-Version). Ist die Bridge (noch) nicht erreichbar,
+/// holt der Reassert-Loop das automatisch nach — die Entscheidung geht nie verloren.
+#[tauri::command]
+pub async fn access_consent_set(
+    app: AppHandle,
+    state: tauri::State<'_, crate::config::AppState>,
+    controller: tauri::State<'_, ConsentController>,
+    mode: String,
+    source: String,
+) -> Result<AccessConsentState, String> {
+    if mode != "full" && mode != "confirm" {
+        return Err(format!("invalid access consent mode: {mode}"));
+    }
+    let source = match source.as_str() {
+        "onboarding" | "settings" => source,
+        _ => "settings".to_string(),
+    };
+
+    // 1) Lokal persistieren — der Record ist die SSOT der Einwilligung.
+    let bridge_mode = {
+        let mut config = state.config.lock();
+        config.access_consent = mode.clone();
+        config.access_consent_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs_f64())
+            .unwrap_or(0.0);
+        config.save().map_err(|error| error.to_string())?;
+        config
+            .access_mode_for_consent()
+            .expect("mode validated above")
+    };
+
+    // 2) An die Bridge melden (setzt Enforcement + schreibt den Audit-Record). Best-effort:
+    //    scheitert der Call (Bridge startet z. B. gerade), re-asserted der Poll-Loop die
+    //    persistierte Entscheidung, sobald die Bridge erreichbar ist.
+    let app_version = app.package_info().version.to_string();
+    match controller.set_access_mode(bridge_mode, &source, &app_version).await {
+        Ok(()) => controller.mark_access_mode_synced(true),
+        Err(error) => {
+            controller.mark_access_mode_synced(false);
+            eprintln!("access_consent_set: bridge not reachable yet, will reassert: {error}");
+        }
+    }
+
+    Ok(read_access_consent_state(&state))
 }
 
 #[tauri::command]
