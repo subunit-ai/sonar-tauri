@@ -190,3 +190,51 @@ jobs:
           # findet `/releases/latest` (Drafts werden vom Updater nie aufgelöst).
           releaseDraft: false
           args: ${{ matrix.args }}
+
+  mirror:
+    # Distribution: öffentliches Repo subunit-ai/sonar-releases (nur Binaries + latest.json,
+    # kein Quellcode) — sonar-tauri wird privat, und Release-Assets privater Repos sind anonym
+    # nie abrufbar (der Updater bekäme 404). Clients ab v0.1.47 pollen sonar-releases; der
+    # Release hier bleibt übergangsweise zusätzlich bestehen (Clients ≤v0.1.46 pollen dieses
+    # Repo, solange es public ist). Nach dem Privat-Flip ist der hiesige Release nur noch
+    # internes Archiv. Secret: RELEASES_TOKEN = Schreibrecht auf sonar-releases.
+    # Muster: echo-tauri → echo-releases / subunit-scai → scai-releases.
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release nach sonar-releases spiegeln (Manifest-URLs umgeschrieben)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          repo="${{ github.repository }}"
+          pubrepo="subunit-ai/sonar-releases"
+          mkdir -p /tmp/dist && cd /tmp/dist
+          gh release download "$tag" -R "$repo" --clobber
+          test -f latest.json || { echo "::error::latest.json fehlt im Release $tag"; exit 1; }
+          # URLs im Manifest aufs public Repo umschreiben — Signaturen bleiben unberührt
+          # (minisign signiert die Datei, nicht die URL).
+          python3 - <<'PY'
+          import json
+          m = json.load(open("latest.json"))
+          for v in m["platforms"].values():
+              v["url"] = v["url"].replace("subunit-ai/sonar-tauri", "subunit-ai/sonar-releases")
+          json.dump(m, open("latest.json", "w"), indent=2)
+          print("Plattformen:", ", ".join(sorted(m["platforms"])))
+          PY
+          export GH_TOKEN="$RELEASES_TOKEN"
+          if ! gh release view "$tag" -R "$pubrepo" > /dev/null 2>&1; then
+            gh release create "$tag" -R "$pubrepo" --draft --title "Sonar $tag" \
+              --notes "Sonar $tag — macOS (arm64 + x64), Windows x64/ARM64, Linux. Auto-Update-Feed: latest.json."
+          fi
+          gh release upload "$tag" -R "$pubrepo" /tmp/dist/* --clobber
+          # Draft-ID über die Release-LISTE auflösen — /releases/tags/<tag> sieht Drafts nicht
+          # (404; hat bei echo-tauri den ersten Mirror-Publish gekillt).
+          pubid=$(gh api "repos/$pubrepo/releases?per_page=30" \
+            --jq "[.[] | select(.tag_name==\"$tag\")][0].id // empty")
+          [ -n "$pubid" ] || { echo "::error::kein $pubrepo-Release für $tag gefunden"; exit 1; }
+          gh api -X PATCH "repos/$pubrepo/releases/$pubid" \
+            -F draft=false -f make_latest=true > /dev/null
+          echo "gespiegelt: https://github.com/$pubrepo/releases/tag/$tag"
