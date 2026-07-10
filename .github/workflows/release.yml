@@ -4,8 +4,10 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-# Signing (cert-gated): WINDOWS_CERTIFICATE / APPLE_* Secrets → schaltet sich via if-Gate an.
-# Updater-Signing: TAURI_SIGNING_PRIVATE_KEY (+ _PASSWORD).
+# Signing (cert-gated): APPLE_* -> macOS-Keychain-Step; WINDOWS_CERTIFICATE(+_PASSWORD) ->
+# scripts/win-authenticode-prep.ps1 setzt certificateThumbprint, Tauri signiert NSIS + App-EXE
+# per signtool. Beide gaten sich selbst aus, wenn das jeweilige Secret fehlt (Build bleibt unsigniert).
+# Updater-Signing (unabhaengig): TAURI_SIGNING_PRIVATE_KEY (+ _PASSWORD).
 # Architektur: Sidecars werden EINMAL auf Linux gebaut (Bun cross-compile inkl. Windows-Targets)
 # und als Artifact verteilt — vermeidet Cross-Repo-Checkout des privaten bridge-tauri auf Windows
 # (ssh-key-Permissions-Problem). Win-ARM-Sidecar = x64 via Emulation (Bun hat kein win-arm64).
@@ -167,6 +169,17 @@ jobs:
           rm /tmp/sonar-sign.p12
           echo "gueltige codesigning-Identities:"
           security find-identity -v -p codesigning build.keychain
+      - name: Windows Authenticode — Signatur vorbereiten (cert-gated)
+        # Importiert das PFX-Cert und setzt bundle.windows.certificateThumbprint in tauri.conf.json,
+        # WORAUF Tauri den NSIS-Installer + die App-EXE per signtool signiert (SmartScreen-"Unbekannter
+        # Herausgeber" faellt weg). Ohne WINDOWS_CERTIFICATE-Secret = No-Op -> Build bleibt unsigniert
+        # wie bisher (kein Fehler). Muss VOR dem Tauri-Build laufen (Bundler liest den Thumbprint).
+        if: startsWith(matrix.os, 'windows')
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: ./scripts/win-authenticode-prep.ps1
       - name: Build + release (Tauri)
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:

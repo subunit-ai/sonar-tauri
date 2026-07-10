@@ -1,0 +1,93 @@
+name: Win-Installer-Check
+# Baut den echten Windows-x64-NSIS-Installer aus einem PR oder per Dispatch und laedt ihn als
+# Build-Artifact hoch (KEIN GitHub-Release, keine Version getaggt). Zweck: die One-Click-Installer-
+# Kette am PR verifizierbar machen -> NSIS-Bundle + Authenticode-Signatur (cert-gated) laufen durch
+# und erzeugen eine Setup.exe, BEVOR wir je einen echten Release-Tag schneiden.
+#
+# Was dieser Lauf beweist:
+#   - der NSIS-Installer buendelt + baut auf windows-latest fehlerfrei
+#   - der Windows-Authenticode-Schritt (scripts/win-authenticode-prep.ps1) laeuft (cert-gated:
+#     ohne WINDOWS_CERTIFICATE-Secret = unsigniert wie bisher; mit Secret = signierte Setup.exe)
+#   - Ergebnis liegt als herunterladbares Artifact vor (manuell im Actions-Tab pruefbar)
+#
+# Was dieser Lauf NICHT beweist: die Sidecars sind hier STUBS (leere Platzhalter), damit der Check
+# schlank + ohne bridge-Deploy-Key laeuft. Der Installer ist also ein Build-/Signier-Smoke-Test,
+# NICHT lauffaehig — die lauffaehige, sidecar-echte Setup.exe kommt aus release.yml (Tag v*).
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/win-installer-check.yml"
+      - ".github/workflows/release.yml"
+      - "scripts/win-authenticode-prep.ps1"
+      - "src-tauri/tauri.conf.json"
+      - "src-tauri/installer-hooks.nsh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  win-installer:
+    runs-on: windows-latest
+    # Cert-Secrets auf Job-Ebene -> sowohl der Signatur-Schritt als auch das if-Gate des
+    # Verify-Schritts sehen sie (ein step-eigenes env ist im eigenen if NICHT sichtbar).
+    env:
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Checkout trace-engine source (pinned, read-only deploy key) -> trace-src
+        # Die App-Crate hat eine Path-Dependency ../trace-src (Cargo.toml) -> ohne sie kompiliert
+        # der Rust-Build nicht. Pin identisch zu release.yml/ci.yml halten (sonst Cargo.lock-Drift).
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: subunit-ai/trace-tauri
+          ref: a03cd0ef5d28a78dbc137c945bccb98824e17a99 # v0.1.13 — MUSS dem release.yml-Pin entsprechen
+          ssh-key: ${{ secrets.TRACE_DEPLOY_KEY }}
+          path: trace-src
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with: { bun-version: 1.3.11 }
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: stable
+      - name: Stub-Sidecars (Platzhalter -> NSIS buendelt sie; Build-/Signier-Smoke-Test)
+        # externalBin (tauri.conf.json) erwartet die Sidecar-Dateien pro Host-Triple im
+        # Bundle-Schritt. Echte Sidecars braucht dieser Check nicht (nur NSIS + Signatur testen),
+        # daher Platzhalter statt bun-cross/forge-Build -> schlank + kein bridge-Deploy-Key.
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          printf 'stub' > src-tauri/binaries/subunit-bridge-x86_64-pc-windows-msvc.exe
+          printf 'stub' > src-tauri/binaries/forge-control-x86_64-pc-windows-msvc.exe
+      - name: Frontend deps
+        run: bun install --frozen-lockfile
+      - name: Windows Authenticode — Signatur vorbereiten (cert-gated)
+        # WINDOWS_CERTIFICATE(+_PASSWORD) kommen aus dem Job-env oben.
+        shell: pwsh
+        run: ./scripts/win-authenticode-prep.ps1
+      - name: Build NSIS installer (kein Release)
+        # createUpdaterArtifacts=true -> Tauri braucht den Updater-Signing-Key fuers .sig.
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bun run tauri build --bundles nsis
+      - name: Signatur pruefen (nur wenn Cert gesetzt)
+        if: ${{ env.WINDOWS_CERTIFICATE != '' }}
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          $sig = Get-AuthenticodeSignature $exe.FullName
+          Write-Host "Signaturstatus: $($sig.Status) - Signer: $($sig.SignerCertificate.Subject)"
+          # NotSigned = signtool lief nicht -> harter Fehler. NotTrusted/Valid = Signatur IST da
+          # (NotTrusted nur, wenn die Cert-Kette auf dem Runner nicht oeffentlich vertraut ist,
+          # z.B. Test-Cert); beides beweist, dass die Signatur-Kette greift.
+          if ($sig.Status -eq 'NotSigned') { throw "Setup.exe ist NICHT signiert - Authenticode-Wiring greift nicht." }
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sonar-windows-x64-nsis
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/nsis/*-setup.exe.sig
+          if-no-files-found: error
+          retention-days: 7

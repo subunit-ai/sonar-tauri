@@ -67,6 +67,8 @@
     ],
     "externalBin": ["binaries/subunit-bridge", "binaries/forge-control"],
     "windows": {
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com",
       "nsis": {
         "installMode": "currentUser",
         "installerHooks": "./installer-hooks.nsh"
