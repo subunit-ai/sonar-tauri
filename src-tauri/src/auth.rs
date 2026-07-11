@@ -19,6 +19,9 @@ use tauri::{AppHandle, Manager};
 use crate::config::AppState;
 
 const AUTH_BASE: &str = "https://auth.subunit.ai";
+// Sagt der Login-Seite, WER sie geöffnet hat — sie textet sich danach (Titel,
+// Buttons, "Zurück zu …"). Slug muss in DESKTOP_APPS (subunit-auth/src/sso.ts) stehen.
+const AUTH_APP: &str = "sonar";
 // 30 min — toleriert langsame E-Mail-Code-Zustellung.
 const LOGIN_TIMEOUT_SECS: u64 = 1800;
 
@@ -199,7 +202,7 @@ pub fn login(app: &AppHandle) -> anyhow::Result<String> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     let state = random_state();
-    let url = format!("{AUTH_BASE}/sonar-login?state={state}&port={port}");
+    let url = format!("{AUTH_BASE}/sonar-login?state={state}&port={port}&app={AUTH_APP}");
     open_browser(&url);
 
     listener.set_nonblocking(true)?;
