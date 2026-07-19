@@ -19,6 +19,19 @@ import { ConsentPrompt, type ConsentRequest } from "./ConsentPrompt";
 import { SonarLogo } from "./SonarLogo";
 import { TraceSpace } from "./TraceSpace";
 
+function deepEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (let i = 0; i < keysA.length; i++) {
+    const key = keysA[i];
+    if (!Object.prototype.hasOwnProperty.call(b, key) || !deepEqual(a[key], b[key])) return false;
+  }
+  return true;
+}
+
 const BRIDGE_POLL_INTERVAL_MS = 3000;
 const CONSENT_POLL_INTERVAL_MS = 1000;
 const ACCOUNT_POLL_INTERVAL_MS = 5000;
@@ -110,11 +123,11 @@ function MainApp() {
     try {
       const next = await invoke<AccountState>("account_state");
       // Prevent unnecessary React re-renders if Tauri returns identical data.
-      setAccount((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+      setAccount((prev) => (deepEqual(prev, next) ? prev : next));
       return next;
     } catch {
       const fallback: AccountState = { logged_in: false, email: "", is_operator: false, workspace_id: "" };
-      setAccount((prev) => (JSON.stringify(prev) === JSON.stringify(fallback) ? prev : fallback));
+      setAccount((prev) => (deepEqual(prev, fallback) ? prev : fallback));
       return null;
     } finally {
       setReady(true);
@@ -124,7 +137,7 @@ function MainApp() {
   const refreshAccessConsent = useCallback(async () => {
     try {
       const next = await invoke<AccessConsentState>("access_consent_state");
-      setAccessConsent((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+      setAccessConsent((prev) => (deepEqual(prev, next) ? prev : next));
     } catch {
       /* Command nicht bereit — Poll unten versucht es erneut. */
     }
@@ -295,7 +308,7 @@ function Shell({
         const next = await invoke<BridgeStatus>("bridge_status");
         if (!cancelled) {
           // Prevent unnecessary React re-renders if Tauri returns identical data.
-          setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+          setStatus((prev) => (deepEqual(prev, next) ? prev : next));
           setLastChecked(new Date());
           // Auto-Re-Pair: Bridge läuft, ist aber ungepairt (war beim Login offline/Zombie) → einmal
           // pro Session automatisch koppeln. Schlägt es fehl, bleibt der manuelle „Koppeln"-Button.
@@ -307,7 +320,7 @@ function Shell({
       } catch {
         if (!cancelled) {
           const fallback: BridgeStatus = { online: false, version: null, paired: null };
-          setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(fallback) ? prev : fallback));
+          setStatus((prev) => (deepEqual(prev, fallback) ? prev : fallback));
           setLastChecked(new Date());
         }
       } finally {
@@ -346,7 +359,7 @@ function Shell({
       // "nichts passiert"). (TJ 2026-06-25)
       for (let attempt = 0; attempt < 8; attempt++) {
         const next = await invoke<BridgeStatus>("bridge_status");
-        setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+        setStatus((prev) => (deepEqual(prev, next) ? prev : next));
         if (next.paired) break;
         await new Promise((resolve) => setTimeout(resolve, 750));
       }
@@ -622,7 +635,7 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
   const refreshConsentState = useCallback(async () => {
     const nextState = await invoke<ConsentState>("consent_state");
     // Prevent unnecessary React re-renders if Tauri returns identical data.
-    setConsentState((prev) => (JSON.stringify(prev) === JSON.stringify(nextState) ? prev : nextState));
+    setConsentState((prev) => (deepEqual(prev, nextState) ? prev : nextState));
     setConsentError(null);
     if ((nextState.pending_count ?? 0) === 0) {
       setPendingConsentRequests([]);
@@ -658,7 +671,7 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
       try {
         const nextState = await invoke<ConsentState>("consent_state");
         if (!cancelled) {
-          setConsentState((prev) => (JSON.stringify(prev) === JSON.stringify(nextState) ? prev : nextState));
+          setConsentState((prev) => (deepEqual(prev, nextState) ? prev : nextState));
           setConsentError(null);
           if ((nextState.pending_count ?? 0) === 0) {
             setPendingConsentRequests([]);
@@ -693,7 +706,7 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
     });
 
     listen<ConsentState>("consent://state", (event) => {
-      setConsentState((prev) => (JSON.stringify(prev) === JSON.stringify(event.payload) ? prev : event.payload));
+      setConsentState((prev) => (deepEqual(prev, event.payload) ? prev : event.payload));
       setConsentError(null);
       if ((event.payload.pending_count ?? 0) === 0) {
         setPendingConsentRequests([]);
