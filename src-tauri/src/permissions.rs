@@ -8,7 +8,7 @@
 
 use serde::Serialize;
 
-#[derive(Serialize, Clone, Copy, Debug)]
+#[derive(Serialize, Clone, Copy, Debug, PartialEq)]
 pub struct PermissionStatus {
     pub screen_recording: bool,
     pub accessibility: bool,
@@ -112,4 +112,36 @@ pub fn permissions_open_settings(which: String) -> Result<(), String> {
     let url = platform::settings_url(&which)
         .ok_or_else(|| format!("keine Settings-URL für: {which}"))?;
     open_url(url).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_permissions_check() {
+        let status = permissions_check();
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(
+                status,
+                PermissionStatus {
+                    screen_recording: true,
+                    accessibility: true,
+                    needs_grants: false,
+                    os: if cfg!(target_os = "windows") { "windows" } else { "linux" },
+                }
+            );
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // On macOS, the actual boolean values might vary based on whether the test
+            // is run in an environment with permissions granted or not.
+            // But we can check that needs_grants is true and os is "macos"
+            assert_eq!(status.needs_grants, true);
+            assert_eq!(status.os, "macos");
+        }
+    }
 }
