@@ -11,7 +11,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
-import { AccessConsentGate, type AccessConsentState } from "./AccessConsentGate";
+import {
+  AccessConsentGate,
+  type AccessConsentState,
+} from "./AccessConsentGate";
 import { BridgeCard, type BridgeStatus } from "./BridgeCard";
 import { ForgeAccessCard, type ConsentState } from "./ForgeAccessCard";
 import { CrystalOverlay } from "./CrystalOverlay";
@@ -104,17 +107,28 @@ function App() {
 function MainApp() {
   const [account, setAccount] = useState<AccountState | null>(null);
   const [ready, setReady] = useState(false);
-  const [accessConsent, setAccessConsent] = useState<AccessConsentState | null>(null);
+  const [accessConsent, setAccessConsent] = useState<AccessConsentState | null>(
+    null,
+  );
 
   const refreshAccount = useCallback(async () => {
     try {
       const next = await invoke<AccountState>("account_state");
       // Prevent unnecessary React re-renders if Tauri returns identical data.
-      setAccount((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+      setAccount((prev) =>
+        JSON.stringify(prev) === JSON.stringify(next) ? prev : next,
+      );
       return next;
     } catch {
-      const fallback: AccountState = { logged_in: false, email: "", is_operator: false, workspace_id: "" };
-      setAccount((prev) => (JSON.stringify(prev) === JSON.stringify(fallback) ? prev : fallback));
+      const fallback: AccountState = {
+        logged_in: false,
+        email: "",
+        is_operator: false,
+        workspace_id: "",
+      };
+      setAccount((prev) =>
+        JSON.stringify(prev) === JSON.stringify(fallback) ? prev : fallback,
+      );
       return null;
     } finally {
       setReady(true);
@@ -124,7 +138,9 @@ function MainApp() {
   const refreshAccessConsent = useCallback(async () => {
     try {
       const next = await invoke<AccessConsentState>("access_consent_state");
-      setAccessConsent((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+      setAccessConsent((prev) =>
+        JSON.stringify(prev) === JSON.stringify(next) ? prev : next,
+      );
     } catch {
       /* Command nicht bereit — Poll unten versucht es erneut. */
     }
@@ -199,7 +215,9 @@ function LoginScreen({
           style={{ ...loginStyles.button, opacity: pending ? 0.6 : 1 }}
           type="button"
         >
-          {pending ? "Browser geöffnet — warte auf Login…" : "Mit Subunit anmelden"}
+          {pending
+            ? "Browser geöffnet — warte auf Login…"
+            : "Mit Subunit anmelden"}
         </button>
         {error ? <p style={loginStyles.error}>{error}</p> : null}
         <p style={loginStyles.hint}>
@@ -239,7 +257,9 @@ function Shell({
   const [updateNote, setUpdateNote] = useState<string | null>(null);
 
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => undefined);
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => undefined);
     let cancelled = false;
     let unlisten: (() => void) | undefined;
     // Backend prüft beim Start + alle 6 h und meldet ein gefundenes Update hierüber.
@@ -295,19 +315,43 @@ function Shell({
         const next = await invoke<BridgeStatus>("bridge_status");
         if (!cancelled) {
           // Prevent unnecessary React re-renders if Tauri returns identical data.
-          setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+          setStatus((prev) =>
+            prev &&
+            prev.online === next.online &&
+            prev.version === next.version &&
+            prev.paired === next.paired
+              ? prev
+              : next,
+          );
           setLastChecked(new Date());
           // Auto-Re-Pair: Bridge läuft, ist aber ungepairt (war beim Login offline/Zombie) → einmal
           // pro Session automatisch koppeln. Schlägt es fehl, bleibt der manuelle „Koppeln"-Button.
-          if (next.online && next.paired === false && !autoPairAttempted.current) {
+          if (
+            next.online &&
+            next.paired === false &&
+            !autoPairAttempted.current
+          ) {
             autoPairAttempted.current = true;
-            invoke("bridge_pair").catch((e) => console.error("auto bridge_pair:", e));
+            invoke("bridge_pair").catch((e) =>
+              console.error("auto bridge_pair:", e),
+            );
           }
         }
       } catch {
         if (!cancelled) {
-          const fallback: BridgeStatus = { online: false, version: null, paired: null };
-          setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(fallback) ? prev : fallback));
+          const fallback: BridgeStatus = {
+            online: false,
+            version: null,
+            paired: null,
+          };
+          setStatus((prev) =>
+            prev &&
+            prev.online === fallback.online &&
+            prev.version === fallback.version &&
+            prev.paired === fallback.paired
+              ? prev
+              : fallback,
+          );
           setLastChecked(new Date());
         }
       } finally {
@@ -346,13 +390,22 @@ function Shell({
       // "nichts passiert"). (TJ 2026-06-25)
       for (let attempt = 0; attempt < 8; attempt++) {
         const next = await invoke<BridgeStatus>("bridge_status");
-        setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+        setStatus((prev) =>
+          prev &&
+          prev.online === next.online &&
+          prev.version === next.version &&
+          prev.paired === next.paired
+            ? prev
+            : next,
+        );
         if (next.paired) break;
         await new Promise((resolve) => setTimeout(resolve, 750));
       }
     } catch (caught) {
       console.error("bridge_pair:", caught);
-      window.alert("Koppeln fehlgeschlagen — bitte sicherstellen, dass du angemeldet bist, und erneut versuchen.");
+      window.alert(
+        "Koppeln fehlgeschlagen — bitte sicherstellen, dass du angemeldet bist, und erneut versuchen.",
+      );
     } finally {
       setPairing(false);
     }
@@ -368,7 +421,10 @@ function Shell({
           <span style={shellStyles.brandWord}>SONAR</span>
         </div>
 
-        <div style={shellStyles.bridgeIndicator} title="Die Bridge ist das Fundament der App">
+        <div
+          style={shellStyles.bridgeIndicator}
+          title="Die Bridge ist das Fundament der App"
+        >
           <span
             style={{
               ...shellStyles.bridgeDot,
@@ -405,13 +461,20 @@ function Shell({
           <div
             style={{
               ...shellStyles.roleChip,
-              ...(account.is_operator ? shellStyles.roleOperator : shellStyles.roleCustomer),
+              ...(account.is_operator
+                ? shellStyles.roleOperator
+                : shellStyles.roleCustomer),
             }}
           >
             {account.is_operator ? "subunit · voller Zugriff" : "Kunde"}
           </div>
           {status?.online && status.paired === false ? (
-            <button onClick={pair} disabled={pairing} style={shellStyles.pairButton} type="button">
+            <button
+              onClick={pair}
+              disabled={pairing}
+              style={shellStyles.pairButton}
+              type="button"
+            >
               {pairing ? "Koppelt…" : "Koppeln"}
             </button>
           ) : null}
@@ -419,7 +482,9 @@ function Shell({
             Abmelden
           </button>
           <div style={shellStyles.updateBox}>
-            <span style={shellStyles.versionText}>Version {appVersion || "—"}</span>
+            <span style={shellStyles.versionText}>
+              Version {appVersion || "—"}
+            </span>
             <button
               onClick={checkForUpdates}
               disabled={updateChecking}
@@ -428,7 +493,9 @@ function Shell({
             >
               {updateChecking ? "Suche…" : "Nach Updates suchen"}
             </button>
-            {updateNote ? <span style={shellStyles.updateNote}>{updateNote}</span> : null}
+            {updateNote ? (
+              <span style={shellStyles.updateNote}>{updateNote}</span>
+            ) : null}
           </div>
         </div>
       </nav>
@@ -437,13 +504,19 @@ function Shell({
         {update ? (
           <div style={updateStyles.banner}>
             <div style={updateStyles.bannerText}>
-              <span style={updateStyles.bannerTitle}>Update verfügbar — Version {update.version}</span>
+              <span style={updateStyles.bannerTitle}>
+                Update verfügbar — Version {update.version}
+              </span>
               <span style={updateStyles.bannerSub}>
-                Ein Klick lädt die neue Version und startet Sonar automatisch neu.
+                Ein Klick lädt die neue Version und startet Sonar automatisch
+                neu.
               </span>
             </div>
             <button
-              style={{ ...updateStyles.bannerButton, opacity: updateInstalling ? 0.6 : 1 }}
+              style={{
+                ...updateStyles.bannerButton,
+                opacity: updateInstalling ? 0.6 : 1,
+              }}
               onClick={installUpdate}
               disabled={updateInstalling}
               type="button"
@@ -500,8 +573,8 @@ const HomeSpace = memo(function HomeSpace({
         Willkommen{account.email ? `, ${displayName(account.email)}` : ""}
       </h1>
       <p style={shellStyles.spaceLead}>
-        Sonar bündelt deine On-Site-Werkzeuge in einer App. Die Bridge ist das Fundament —
-        Forge und Trace laufen darauf.
+        Sonar bündelt deine On-Site-Werkzeuge in einer App. Die Bridge ist das
+        Fundament — Forge und Trace laufen darauf.
       </p>
 
       <BridgeCard status={status} lastChecked={lastChecked} />
@@ -510,7 +583,11 @@ const HomeSpace = memo(function HomeSpace({
         <HomeNavCard
           head="Forge"
           value="Remote-Support"
-          sub={account.is_operator ? "voller Zugriff (intern)" : "Freigabe nötig (Kunde)"}
+          sub={
+            account.is_operator
+              ? "voller Zugriff (intern)"
+              : "Freigabe nötig (Kunde)"
+          }
           onClick={() => onOpenSpace("forge")}
         />
         <HomeNavCard
@@ -548,7 +625,12 @@ function HomeNavCard({
     >
       <div style={homeStyles.cardHeadRow}>
         <span style={homeStyles.cardHead}>{head}</span>
-        <span style={{ ...homeStyles.cardChevron, ...(hover ? homeStyles.cardChevronHover : null) }}>
+        <span
+          style={{
+            ...homeStyles.cardChevron,
+            ...(hover ? homeStyles.cardChevronHover : null),
+          }}
+        >
           →
         </span>
       </div>
@@ -560,7 +642,11 @@ function HomeNavCard({
 
 /** Forge-Space = die ausführende Instanz AUF der Bridge: Remote-Zugriff, Consent, Stop, Hilfe.
  *  Zeigt bewusst KEINEN Bridge-Verbindungsstatus (das ist Fundament → Home/Sidebar). */
-const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: boolean }) {
+const ForgeSpace = memo(function ForgeSpace({
+  bridgeOnline,
+}: {
+  bridgeOnline: boolean;
+}) {
   const [consentState, setConsentState] = useState<ConsentState | null>(null);
   const [pendingConsentRequests, setPendingConsentRequests] = useState<
     ConsentRequest[]
@@ -579,7 +665,9 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
   const [overlayEnabled, setOverlayEnabled] = useState<boolean | null>(null);
   // Zugriffs-Einwilligung (Onboarding-Consent): "full" = Vollzugriff ab Werk, "confirm" =
   // Nachfrage pro Aktion. Hier in den Einstellungen jederzeit widerrufbar (Consent-Zusage).
-  const [accessConsent, setAccessConsent] = useState<AccessConsentState | null>(null);
+  const [accessConsent, setAccessConsent] = useState<AccessConsentState | null>(
+    null,
+  );
   const [accessConsentPending, setAccessConsentPending] = useState(false);
 
   useEffect(() => {
@@ -622,7 +710,9 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
   const refreshConsentState = useCallback(async () => {
     const nextState = await invoke<ConsentState>("consent_state");
     // Prevent unnecessary React re-renders if Tauri returns identical data.
-    setConsentState((prev) => (JSON.stringify(prev) === JSON.stringify(nextState) ? prev : nextState));
+    setConsentState((prev) =>
+      JSON.stringify(prev) === JSON.stringify(nextState) ? prev : nextState,
+    );
     setConsentError(null);
     if ((nextState.pending_count ?? 0) === 0) {
       setPendingConsentRequests([]);
@@ -658,7 +748,11 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
       try {
         const nextState = await invoke<ConsentState>("consent_state");
         if (!cancelled) {
-          setConsentState((prev) => (JSON.stringify(prev) === JSON.stringify(nextState) ? prev : nextState));
+          setConsentState((prev) =>
+            JSON.stringify(prev) === JSON.stringify(nextState)
+              ? prev
+              : nextState,
+          );
           setConsentError(null);
           if ((nextState.pending_count ?? 0) === 0) {
             setPendingConsentRequests([]);
@@ -693,7 +787,11 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
     });
 
     listen<ConsentState>("consent://state", (event) => {
-      setConsentState((prev) => (JSON.stringify(prev) === JSON.stringify(event.payload) ? prev : event.payload));
+      setConsentState((prev) =>
+        JSON.stringify(prev) === JSON.stringify(event.payload)
+          ? prev
+          : event.payload,
+      );
       setConsentError(null);
       if ((event.payload.pending_count ?? 0) === 0) {
         setPendingConsentRequests([]);
@@ -719,7 +817,10 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
     setConsentActionError(null);
     try {
       if (command === "consent_allow") {
-        await invoke(command, { id, rememberForSeconds: rememberForSeconds ?? null });
+        await invoke(command, {
+          id,
+          rememberForSeconds: rememberForSeconds ?? null,
+        });
       } else {
         await invoke(command, { id });
       }
@@ -770,7 +871,9 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
     setHelpActionPending(true);
     setHelpError(null);
     try {
-      const result = await invoke<HelpRequestResult>("help_request", { message: helpDraft.trim() });
+      const result = await invoke<HelpRequestResult>("help_request", {
+        message: helpDraft.trim(),
+      });
       setHelpMessage(result.message);
       setHelpModalOpen(false);
     } catch (caught) {
@@ -788,7 +891,8 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
     <SpaceShell>
       <h1 style={shellStyles.spaceTitle}>Forge — Remote-Support</h1>
       <p style={shellStyles.spaceLead}>
-        Die ausführende Instanz auf der Bridge. Hier steuerst du Fernzugriff, Freigaben und Stop.
+        Die ausführende Instanz auf der Bridge. Hier steuerst du Fernzugriff,
+        Freigaben und Stop.
       </p>
       <ForgeAccessCard
         bridgeOnline={bridgeOnline}
@@ -807,9 +911,10 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
           <div style={forgeSettingsStyles.text}>
             <div style={forgeSettingsStyles.title}>Vollzugriff</div>
             <div style={forgeSettingsStyles.desc}>
-              Dein Subunit-Operator darf auf diesem Gerät ohne erneute Nachfrage pro Aktion
-              arbeiten. Jede Aktion wird protokolliert. Beim Ausschalten werden laufende
-              Aktionen beendet — danach braucht jede Aktion deine Bestätigung.
+              Dein Subunit-Operator darf auf diesem Gerät ohne erneute Nachfrage
+              pro Aktion arbeiten. Jede Aktion wird protokolliert. Beim
+              Ausschalten werden laufende Aktionen beendet — danach braucht jede
+              Aktion deine Bestätigung.
             </div>
           </div>
           <button
@@ -845,8 +950,9 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
           <div style={forgeSettingsStyles.text}>
             <div style={forgeSettingsStyles.title}>„u1 arbeitet"-Overlay</div>
             <div style={forgeSettingsStyles.desc}>
-              Vollbild-Hinweis mit rotierendem Kristall während des Fernzugriffs. Du kannst es
-              jederzeit über „Ausblenden" wegklicken — hier schaltest du aus, ob es überhaupt erscheint.
+              Vollbild-Hinweis mit rotierendem Kristall während des
+              Fernzugriffs. Du kannst es jederzeit über „Ausblenden" wegklicken
+              — hier schaltest du aus, ob es überhaupt erscheint.
             </div>
           </div>
           <button
@@ -857,26 +963,39 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
             disabled={overlayEnabled === null}
             style={{
               ...forgeSettingsStyles.toggle,
-              ...((overlayEnabled ?? false) ? forgeSettingsStyles.toggleOn : forgeSettingsStyles.toggleOff),
+              ...((overlayEnabled ?? false)
+                ? forgeSettingsStyles.toggleOn
+                : forgeSettingsStyles.toggleOff),
               opacity: overlayEnabled === null ? 0.5 : 1,
             }}
-            title={(overlayEnabled ?? false) ? "Overlay ist an" : "Overlay ist aus"}
+            title={
+              (overlayEnabled ?? false) ? "Overlay ist an" : "Overlay ist aus"
+            }
           >
             <span
               style={{
                 ...forgeSettingsStyles.knob,
-                ...((overlayEnabled ?? false) ? forgeSettingsStyles.knobOn : forgeSettingsStyles.knobOff),
+                ...((overlayEnabled ?? false)
+                  ? forgeSettingsStyles.knobOn
+                  : forgeSettingsStyles.knobOff),
               }}
             />
           </button>
         </div>
       </div>
       {helpModalOpen ? (
-        <div style={helpModalStyles.backdrop} onClick={() => !helpActionPending && setHelpModalOpen(false)}>
-          <div style={helpModalStyles.card} onClick={(e) => e.stopPropagation()}>
+        <div
+          style={helpModalStyles.backdrop}
+          onClick={() => !helpActionPending && setHelpModalOpen(false)}
+        >
+          <div
+            style={helpModalStyles.card}
+            onClick={(e) => e.stopPropagation()}
+          >
             <h2 style={helpModalStyles.title}>Hilfe anfordern</h2>
             <p style={helpModalStyles.lead}>
-              Was ist das Problem? Beschreib es kurz — das Subunit-Team wird sofort benachrichtigt.
+              Was ist das Problem? Beschreib es kurz — das Subunit-Team wird
+              sofort benachrichtigt.
             </p>
             <textarea
               style={helpModalStyles.textarea}
@@ -886,7 +1005,9 @@ const ForgeSpace = memo(function ForgeSpace({ bridgeOnline }: { bridgeOnline: bo
               rows={5}
               autoFocus
             />
-            {helpError ? <p style={helpModalStyles.error}>{helpError}</p> : null}
+            {helpError ? (
+              <p style={helpModalStyles.error}>{helpError}</p>
+            ) : null}
             <div style={helpModalStyles.actions}>
               <button
                 style={helpModalStyles.cancel}
@@ -1045,7 +1166,12 @@ const helpModalStyles: Record<string, CSSProperties> = {
     fontFamily: "inherit",
   },
   error: { margin: "10px 0 0", fontSize: 13, color: "#f87171" },
-  actions: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 },
+  actions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 16,
+  },
   cancel: {
     background: "transparent",
     border: "1px solid rgba(148, 163, 184, 0.3)",
@@ -1079,7 +1205,12 @@ const forgeSettingsStyles: Record<string, CSSProperties> = {
     gap: 16,
     padding: "16px 18px",
   },
-  row: { alignItems: "center", display: "flex", gap: 16, justifyContent: "space-between" },
+  row: {
+    alignItems: "center",
+    display: "flex",
+    gap: 16,
+    justifyContent: "space-between",
+  },
   text: { display: "flex", flexDirection: "column", gap: 3 },
   title: { color: INK, fontSize: 14, fontWeight: 700 },
   desc: { color: "#94a3b8", fontSize: 12, lineHeight: "17px", maxWidth: 460 },
@@ -1127,7 +1258,8 @@ const forgeSettingsStyles: Record<string, CSSProperties> = {
 const updateStyles: Record<string, CSSProperties> = {
   banner: {
     alignItems: "center",
-    background: "linear-gradient(100deg, rgba(6, 182, 212, 0.16), rgba(6, 182, 212, 0.06))",
+    background:
+      "linear-gradient(100deg, rgba(6, 182, 212, 0.16), rgba(6, 182, 212, 0.06))",
     border: "1px solid rgba(6, 182, 212, 0.45)",
     borderRadius: 12,
     boxShadow: "0 8px 30px rgba(6, 182, 212, 0.12)",
@@ -1157,7 +1289,8 @@ const updateStyles: Record<string, CSSProperties> = {
 const shellStyles: Record<string, CSSProperties> = {
   splash: {
     alignItems: "center",
-    background: "linear-gradient(160deg, #0a1424 0%, #0e2333 62%, #062a36 100%)",
+    background:
+      "linear-gradient(160deg, #0a1424 0%, #0e2333 62%, #062a36 100%)",
     color: INK,
     display: "flex",
     fontFamily: fontStack,
@@ -1166,7 +1299,8 @@ const shellStyles: Record<string, CSSProperties> = {
     position: "fixed",
   },
   root: {
-    background: "linear-gradient(160deg, #0a1424 0%, #0e2333 62%, #062a36 100%)",
+    background:
+      "linear-gradient(160deg, #0a1424 0%, #0e2333 62%, #062a36 100%)",
     color: INK,
     display: "flex",
     fontFamily: fontStack,
@@ -1184,7 +1318,12 @@ const shellStyles: Record<string, CSSProperties> = {
     padding: "20px 16px",
     width: 212,
   },
-  brand: { alignItems: "center", display: "flex", gap: 10, padding: "4px 6px 0" },
+  brand: {
+    alignItems: "center",
+    display: "flex",
+    gap: 10,
+    padding: "4px 6px 0",
+  },
   brandWord: { fontSize: 17, fontWeight: 800, letterSpacing: 3 },
   bridgeIndicator: {
     alignItems: "center",
@@ -1311,7 +1450,8 @@ const homeStyles: Record<string, CSSProperties> = {
     WebkitBackdropFilter: "blur(18px) saturate(1.4)",
     border: "1px solid rgba(6, 182, 212, 0.18)",
     borderRadius: 12,
-    boxShadow: "0 18px 50px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(190, 215, 245, 0.06)",
+    boxShadow:
+      "0 18px 50px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(190, 215, 245, 0.06)",
     boxSizing: "border-box",
     color: INK,
     cursor: "pointer",
@@ -1319,15 +1459,21 @@ const homeStyles: Record<string, CSSProperties> = {
     fontFamily: "inherit",
     padding: "16px 16px 18px",
     textAlign: "left",
-    transition: "transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease",
+    transition:
+      "transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease",
     width: "100%",
   },
   cardHover: {
     borderColor: "rgba(6, 182, 212, 0.5)",
-    boxShadow: "0 26px 60px rgba(0, 0, 0, 0.42), 0 0 30px rgba(6, 182, 212, 0.12), inset 0 1px 0 rgba(190, 215, 245, 0.08)",
+    boxShadow:
+      "0 26px 60px rgba(0, 0, 0, 0.42), 0 0 30px rgba(6, 182, 212, 0.12), inset 0 1px 0 rgba(190, 215, 245, 0.08)",
     transform: "translateY(-2px)",
   },
-  cardHeadRow: { alignItems: "center", display: "flex", justifyContent: "space-between" },
+  cardHeadRow: {
+    alignItems: "center",
+    display: "flex",
+    justifyContent: "space-between",
+  },
   cardHead: {
     color: "#64748b",
     fontSize: 11,
@@ -1349,7 +1495,8 @@ const homeStyles: Record<string, CSSProperties> = {
 const loginStyles: Record<string, CSSProperties> = {
   card: {
     alignItems: "center",
-    background: "linear-gradient(180deg, rgba(15, 26, 44, 0.92), rgba(8, 16, 30, 0.92))",
+    background:
+      "linear-gradient(180deg, rgba(15, 26, 44, 0.92), rgba(8, 16, 30, 0.92))",
     border: `1px solid ${CYAN}`,
     borderRadius: 16,
     boxShadow: "0 32px 110px rgba(0,0,0,0.55), 0 0 52px rgba(6,182,212,0.12)",
@@ -1361,7 +1508,13 @@ const loginStyles: Record<string, CSSProperties> = {
     width: "min(420px, calc(100vw - 48px))",
   },
   title: { fontSize: 30, fontWeight: 800, letterSpacing: 4, margin: "6px 0 0" },
-  subtitle: { color: "#94a3b8", fontSize: 14, lineHeight: "21px", margin: 0, maxWidth: 320 },
+  subtitle: {
+    color: "#94a3b8",
+    fontSize: 14,
+    lineHeight: "21px",
+    margin: 0,
+    maxWidth: 320,
+  },
   button: {
     background: CYAN,
     border: "none",
@@ -1405,10 +1558,12 @@ const overlayStyles: Record<string, CSSProperties> = {
     position: "fixed",
   },
   card: {
-    background: "linear-gradient(180deg, rgba(15, 26, 44, 0.96), rgba(8, 16, 30, 0.96))",
+    background:
+      "linear-gradient(180deg, rgba(15, 26, 44, 0.96), rgba(8, 16, 30, 0.96))",
     border: `2px solid ${CYAN}`,
     borderRadius: 8,
-    boxShadow: "0 32px 110px rgba(0, 0, 0, 0.58), 0 0 52px rgba(6, 182, 212, 0.14)",
+    boxShadow:
+      "0 32px 110px rgba(0, 0, 0, 0.58), 0 0 52px rgba(6, 182, 212, 0.14)",
     boxSizing: "border-box",
     minHeight: 360,
     padding: "26px 40px 24px",
@@ -1440,8 +1595,20 @@ const overlayStyles: Record<string, CSSProperties> = {
     margin: "10px 0 0",
     overflowWrap: "anywhere",
   },
-  subtitle: { color: "#94a3b8", fontSize: 16, lineHeight: "24px", margin: "14px auto 0", maxWidth: 460 },
-  footer: { color: "#64748b", fontSize: 12, fontWeight: 800, lineHeight: "18px", marginTop: 24 },
+  subtitle: {
+    color: "#94a3b8",
+    fontSize: 16,
+    lineHeight: "24px",
+    margin: "14px auto 0",
+    maxWidth: 460,
+  },
+  footer: {
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: 800,
+    lineHeight: "18px",
+    marginTop: 24,
+  },
 };
 
 const overlayControlStyles: Record<string, CSSProperties> = {
