@@ -5,6 +5,7 @@
 //! Hinweis (Hardening-Follow-up): Tokens liegen — wie bei Echo — als Klartext-JSON
 //! im user-scoped Config-Dir. OS-Keychain ist ein späterer Härtungsschritt.
 
+use keyring::Entry;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -90,20 +91,43 @@ impl Default for Config {
 
 impl Config {
     pub fn load() -> Self {
-        config_path()
+        let mut config: Self = config_path()
             .and_then(|path| std::fs::read(path).ok())
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+
+        if let Ok(entry) = Entry::new("sonar", "access_token") {
+            if let Ok(token) = entry.get_password() {
+                config.subunit_access_token = token;
+            }
+        }
+        if let Ok(entry) = Entry::new("sonar", "refresh_token") {
+            if let Ok(token) = entry.get_password() {
+                config.subunit_refresh_token = token;
+            }
+        }
+
+        config
     }
 
     /// Atomar schreiben (temp + rename) und auf Unix mit 0600 absichern, damit der
     /// Refresh-Token nicht von anderen Usern lesbar ist (Codex-Finding #3).
     pub fn save(&self) -> anyhow::Result<()> {
+        if let Ok(entry) = Entry::new("sonar", "access_token") {
+            let _ = entry.set_password(&self.subunit_access_token);
+        }
+        if let Ok(entry) = Entry::new("sonar", "refresh_token") {
+            let _ = entry.set_password(&self.subunit_refresh_token);
+        }
+
         let path = config_path().ok_or_else(|| anyhow::anyhow!("no config dir available"))?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let data = serde_json::to_vec_pretty(self)?;
+        let mut clone = self.clone();
+        clone.subunit_access_token.clear();
+        clone.subunit_refresh_token.clear();
+        let data = serde_json::to_vec_pretty(&clone)?;
         let tmp = path.with_extension("json.tmp");
         std::fs::write(&tmp, &data)?;
         #[cfg(unix)]
@@ -125,6 +149,12 @@ impl Config {
     }
 
     pub fn clear_account(&mut self) {
+        if let Ok(entry) = Entry::new("sonar", "access_token") {
+            let _ = entry.delete_credential();
+        }
+        if let Ok(entry) = Entry::new("sonar", "refresh_token") {
+            let _ = entry.delete_credential();
+        }
         self.subunit_access_token.clear();
         self.subunit_refresh_token.clear();
         self.subunit_token_expires_in = 0;

@@ -4367,6 +4367,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "dirs 5.0.1",
+ "keyring",
  "parking_lot",
  "rand 0.8.5",
  "reqwest 0.12.28",
