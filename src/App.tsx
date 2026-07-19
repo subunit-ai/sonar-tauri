@@ -52,6 +52,12 @@ type AccountState = {
 
 type SpaceId = "home" | "forge" | "trace";
 
+function isSameBridgeStatus(a: BridgeStatus | null, b: BridgeStatus | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.online === b.online && a.version === b.version && a.paired === b.paired;
+}
+
 /**
  * Transparente Overlay-Fenster (overlay + overlayControl) laden dieselbe
  * index.html wie das Hauptfenster. Ohne CSS-Reset bleibt der Browser-Default
@@ -295,7 +301,7 @@ function Shell({
         const next = await invoke<BridgeStatus>("bridge_status");
         if (!cancelled) {
           // Prevent unnecessary React re-renders if Tauri returns identical data.
-          setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+          setStatus((prev) => (isSameBridgeStatus(prev, next) ? prev : next));
           setLastChecked(new Date());
           // Auto-Re-Pair: Bridge läuft, ist aber ungepairt (war beim Login offline/Zombie) → einmal
           // pro Session automatisch koppeln. Schlägt es fehl, bleibt der manuelle „Koppeln"-Button.
@@ -307,7 +313,7 @@ function Shell({
       } catch {
         if (!cancelled) {
           const fallback: BridgeStatus = { online: false, version: null, paired: null };
-          setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(fallback) ? prev : fallback));
+          setStatus((prev) => (isSameBridgeStatus(prev, fallback) ? prev : fallback));
           setLastChecked(new Date());
         }
       } finally {
@@ -346,7 +352,7 @@ function Shell({
       // "nichts passiert"). (TJ 2026-06-25)
       for (let attempt = 0; attempt < 8; attempt++) {
         const next = await invoke<BridgeStatus>("bridge_status");
-        setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+        setStatus((prev) => (isSameBridgeStatus(prev, next) ? prev : next));
         if (next.paired) break;
         await new Promise((resolve) => setTimeout(resolve, 750));
       }
