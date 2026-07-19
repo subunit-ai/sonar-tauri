@@ -1,3 +1,4 @@
+import { isEqual } from "./utils";
 import { useCallback, useEffect, useState, memo, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SonarLogo } from "./SonarLogo";
@@ -76,8 +77,8 @@ export const TraceSpace = memo(function TraceSpace() {
         invoke<TraceConsent>("trace_consent_state"),
       ]);
       // Prevent unnecessary React re-renders if Tauri returns identical data.
-      setStatus((prev) => (JSON.stringify(prev) === JSON.stringify(s) ? prev : s));
-      setConsent((prev) => (JSON.stringify(prev) === JSON.stringify(cs) ? prev : cs));
+      setStatus((prev) => (isEqual(prev, s) ? prev : s));
+      setConsent((prev) => (isEqual(prev, cs) ? prev : cs));
       setError(null);
       if (s.total_events > 0) {
         // Heute 00:00 als "since" für die App-Nutzung.
@@ -86,13 +87,13 @@ export const TraceSpace = memo(function TraceSpace() {
           invoke<ActivityEvent[]>("trace_recent_events", { limit: 40 }),
           invoke<AppUsage[]>("trace_app_usage", { since }),
         ]);
-        setEvents((prev) => (JSON.stringify(prev) === JSON.stringify(ev) ? prev : ev));
-        setUsage((prev) => (JSON.stringify(prev) === JSON.stringify(us) ? prev : us));
+        setEvents((prev) => (isEqual(prev, ev) ? prev : ev));
+        setUsage((prev) => (isEqual(prev, us) ? prev : us));
       } else {
         const emptyEvents: ActivityEvent[] = [];
         const emptyUsage: AppUsage[] = [];
-        setEvents((prev) => (JSON.stringify(prev) === JSON.stringify(emptyEvents) ? prev : emptyEvents));
-        setUsage((prev) => (JSON.stringify(prev) === JSON.stringify(emptyUsage) ? prev : emptyUsage));
+        setEvents((prev) => (isEqual(prev, emptyEvents) ? prev : emptyEvents));
+        setUsage((prev) => (isEqual(prev, emptyUsage) ? prev : emptyUsage));
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
