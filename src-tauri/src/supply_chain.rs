@@ -202,3 +202,39 @@ fn hex_encode(bytes: &[u8]) -> String {
     }
     output
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constant_time_eq_32_equal() {
+        let left = [0x42; 32];
+        let right = [0x42; 32];
+        assert!(constant_time_eq_32(&left, &right));
+    }
+
+    #[test]
+    fn test_constant_time_eq_32_not_equal() {
+        let left = [0x42; 32];
+
+        let mut right1 = [0x42; 32];
+        right1[0] = 0x43;
+        assert!(!constant_time_eq_32(&left, &right1));
+
+        let mut right2 = [0x42; 32];
+        right2[15] = 0x43;
+        assert!(!constant_time_eq_32(&left, &right2));
+
+        let mut right3 = [0x42; 32];
+        right3[31] = 0x43;
+        assert!(!constant_time_eq_32(&left, &right3));
+    }
+
+    #[test]
+    fn test_constant_time_eq_32_completely_different() {
+        let left = [0x00; 32];
+        let right = [0xff; 32];
+        assert!(!constant_time_eq_32(&left, &right));
+    }
+}
