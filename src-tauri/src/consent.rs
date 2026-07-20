@@ -257,7 +257,8 @@ impl ConsentController {
                 *self.lock_last_signed_operator_id() = Some(operator_id);
             }
 
-            if seen_pending.insert(row.id.clone()) {
+            if !seen_pending.contains(&row.id) {
+                seen_pending.insert(row.id.clone());
                 new_rows.push(row.clone());
             }
         }
