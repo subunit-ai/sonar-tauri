@@ -473,3 +473,19 @@ fn decode_jwt_claims(token: &str) -> Option<serde_json::Value> {
         .ok()?;
     serde_json::from_slice(&bytes).ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_percent_decode() {
+        assert_eq!(percent_decode("hello%20world"), "hello world");
+        assert_eq!(percent_decode("hello+world"), "hello world");
+        assert_eq!(percent_decode("%21%40%23"), "!@#");
+        assert_eq!(percent_decode("%2Z"), "%2Z");
+        assert_eq!(percent_decode("%2"), "%2");
+        assert_eq!(percent_decode("%"), "%");
+        assert_eq!(percent_decode("a+b%20c%21"), "a b c!");
+    }
+}
