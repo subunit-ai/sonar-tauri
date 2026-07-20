@@ -242,3 +242,60 @@ fn value_to_bool(value: &Value) -> Option<bool> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_value_to_string() {
+        // String inputs
+        assert_eq!(value_to_string(&json!("hello")), Some("hello".to_string()));
+        assert_eq!(value_to_string(&json!("123")), Some("123".to_string()));
+
+        // Empty string
+        assert_eq!(value_to_string(&json!("")), None);
+
+        // Number inputs
+        assert_eq!(value_to_string(&json!(42)), Some("42".to_string()));
+        assert_eq!(value_to_string(&json!(3.14)), Some("3.14".to_string()));
+        assert_eq!(value_to_string(&json!(-7)), Some("-7".to_string()));
+
+        // Unsupported types
+        assert_eq!(value_to_string(&json!(true)), None);
+        assert_eq!(value_to_string(&json!(false)), None);
+        assert_eq!(value_to_string(&json!(null)), None);
+        assert_eq!(value_to_string(&json!([1, 2, 3])), None);
+        assert_eq!(value_to_string(&json!({"a": 1})), None);
+    }
+
+    #[test]
+    fn test_value_to_bool() {
+        // Boolean inputs
+        assert_eq!(value_to_bool(&json!(true)), Some(true));
+        assert_eq!(value_to_bool(&json!(false)), Some(false));
+
+        // String inputs (case-insensitive)
+        assert_eq!(value_to_bool(&json!("true")), Some(true));
+        assert_eq!(value_to_bool(&json!("false")), Some(false));
+        assert_eq!(value_to_bool(&json!("TRUE")), Some(true));
+        assert_eq!(value_to_bool(&json!("FALSE")), Some(false));
+        assert_eq!(value_to_bool(&json!("True")), Some(true));
+        assert_eq!(value_to_bool(&json!("False")), Some(false));
+
+        // Invalid string inputs
+        assert_eq!(value_to_bool(&json!("yes")), None);
+        assert_eq!(value_to_bool(&json!("no")), None);
+        assert_eq!(value_to_bool(&json!("1")), None);
+        assert_eq!(value_to_bool(&json!("0")), None);
+        assert_eq!(value_to_bool(&json!("")), None);
+
+        // Unsupported types
+        assert_eq!(value_to_bool(&json!(1)), None);
+        assert_eq!(value_to_bool(&json!(0)), None);
+        assert_eq!(value_to_bool(&json!(null)), None);
+        assert_eq!(value_to_bool(&json!([true])), None);
+        assert_eq!(value_to_bool(&json!({"a": true})), None);
+    }
+}
