@@ -173,3 +173,52 @@ impl AppState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_logged_in() {
+        let mut config = Config::default();
+
+        // Initial state
+        assert!(!config.is_logged_in());
+
+        // Only access token
+        config.subunit_access_token = "access_token".to_string();
+        assert!(config.is_logged_in());
+
+        // Only refresh token
+        config.subunit_access_token.clear();
+        config.subunit_refresh_token = "refresh_token".to_string();
+        assert!(config.is_logged_in());
+
+        // Both tokens
+        config.subunit_access_token = "access_token".to_string();
+        assert!(config.is_logged_in());
+    }
+
+    #[test]
+    fn test_clear_account() {
+        let mut config = Config {
+            subunit_access_token: "access_token".to_string(),
+            subunit_refresh_token: "refresh_token".to_string(),
+            subunit_token_expires_in: 3600,
+            subunit_token_issued_at: 1000.0,
+            subunit_workspace_id: "workspace_1".to_string(),
+            account_email: "test@example.com".to_string(),
+            account_is_operator: true,
+        };
+
+        config.clear_account();
+
+        assert!(config.subunit_access_token.is_empty());
+        assert!(config.subunit_refresh_token.is_empty());
+        assert_eq!(config.subunit_token_expires_in, 0);
+        assert_eq!(config.subunit_token_issued_at, 0.0);
+        assert!(config.subunit_workspace_id.is_empty());
+        assert!(config.account_email.is_empty());
+        assert!(!config.account_is_operator);
+    }
+}
